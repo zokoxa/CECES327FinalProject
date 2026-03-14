@@ -14,3 +14,4 @@ chess-engine/obj/
 # OS
 .DS_Store
 Thumbs.db
+psp.txt
