@@ -42,6 +42,22 @@ app.use('/api/auth', authRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
+const CHESS_ENGINE_URL = process.env.CHESS_ENGINE_URL || 'http://localhost:5001';
+
+// Proxy to chess engine — returns all legal moves for a given position history.
+app.post('/api/game/moves', async (req, res) => {
+  try {
+    const upstream = await fetch(`${CHESS_ENGINE_URL}/moves`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
+    res.json(await upstream.json());
+  } catch {
+    res.status(503).json({ error: 'Chess engine unavailable' });
+  }
+});
+
 // ─── Socket.io Auth Guard ───────────────────────────────────────────────────
 // Validate JWT before allowing socket connection
 io.use(async (socket, next) => {
