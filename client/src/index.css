@@ -1,0 +1,133 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: system-ui, sans-serif;
+  background: #1a1a1a;
+  color: #f0f0f0;
+  min-height: 100vh;
+}
+
+/* ── Auth ──────────────────────────────────────── */
+.auth-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 1.5rem;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 320px;
+  background: #2a2a2a;
+  padding: 2rem;
+  border-radius: 8px;
+}
+
+.auth-form input {
+  padding: 0.6rem 0.8rem;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background: #1a1a1a;
+  color: #f0f0f0;
+  font-size: 1rem;
+}
+
+.auth-form button {
+  padding: 0.7rem;
+  border: none;
+  border-radius: 4px;
+  background: #5d8a5e;
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.auth-form button:hover { background: #4a7a4b; }
+.auth-form a { color: #8ab58b; }
+.error { color: #e06c75; font-size: 0.9rem; }
+
+/* ── Home / Lobby ──────────────────────────────── */
+.home-page header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  background: #2a2a2a;
+}
+
+.lobby {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 64px);
+  gap: 1.5rem;
+}
+
+.play-btn {
+  padding: 1rem 3rem;
+  font-size: 1.4rem;
+  background: #5d8a5e;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+}
+
+.play-btn:hover { background: #4a7a4b; }
+
+/* ── Game ──────────────────────────────────────── */
+.game-page {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto 1fr auto auto;
+  gap: 1rem;
+  padding: 1rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.game-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.game-controls button {
+  padding: 0.5rem 1.2rem;
+  border: none;
+  border-radius: 4px;
+  background: #444;
+  color: #f0f0f0;
+  cursor: pointer;
+}
+
+.game-controls button:hover:not(:disabled) { background: #555; }
+.game-controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.game-over-banner {
+  background: #3a2a2a;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.move-list {
+  grid-row: 1 / 5;
+  background: #2a2a2a;
+  padding: 1rem;
+  border-radius: 8px;
+  width: 180px;
+  overflow-y: auto;
+  max-height: 560px;
+}
+
+.move-list ol { padding-left: 1.2rem; font-size: 0.9rem; line-height: 1.8; }
+
+.loading { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
