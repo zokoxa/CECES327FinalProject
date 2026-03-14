@@ -1,26 +1,31 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase.js';
 
-/**
- * Global auth state via Zustand.
- * Listens to Supabase's onAuthStateChange so the store stays in sync
- * with the Supabase session automatically (refresh, logout, etc.).
- */
+async function fetchUsername(userId) {
+  const { data } = await supabase
+    .from('profiles')
+    .select('username')
+    .eq('id', userId)
+    .single();
+  return data?.username ?? null;
+}
+
 export const useAuthStore = create((set) => ({
   user: null,
   session: null,
+  username: null,
   loading: true,
 
   init: () => {
-    // Restore session on page load
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      set({ session, user: session?.user ?? null, loading: false });
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      const username = session ? await fetchUsername(session.user.id) : null;
+      set({ session, user: session?.user ?? null, username, loading: false });
     });
 
-    // Subscribe to future auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        set({ session, user: session?.user ?? null, loading: false });
+      async (_event, session) => {
+        const username = session ? await fetchUsername(session.user.id) : null;
+        set({ session, user: session?.user ?? null, username, loading: false });
       }
     );
 
@@ -30,12 +35,13 @@ export const useAuthStore = create((set) => ({
   signIn: async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
-    set({ session: data.session, user: data.user });
+    const username = await fetchUsername(data.user.id);
+    set({ session: data.session, user: data.user, username });
     return data;
   },
 
   signOut: async () => {
     await supabase.auth.signOut();
-    set({ session: null, user: null });
+    set({ session: null, user: null, username: null });
   },
 }));

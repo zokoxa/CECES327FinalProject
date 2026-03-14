@@ -4,7 +4,7 @@ import { useAuthStore } from '../store/authStore.js';
 import { useSocket } from '../hooks/useSocket.js';
 
 export default function Home() {
-  const { user, signOut } = useAuthStore();
+  const { username, signOut } = useAuthStore();
   const { emit, on } = useSocket();
   const [status, setStatus] = useState('idle'); // 'idle' | 'waiting' | 'starting'
   const navigate = useNavigate();
@@ -38,7 +38,7 @@ export default function Home() {
       <header>
         <h1>♟ Chess Clone</h1>
         <div className="user-info">
-          <span>Hello, {user?.email}</span>
+          <span>Hello, {username}</span>
           <button onClick={signOut}>Log out</button>
         </div>
       </header>
