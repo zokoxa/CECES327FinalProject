@@ -1,0 +1,17 @@
+# Environment — never commit secrets
+.env
+
+# Dependencies
+node_modules/
+
+# Build output
+client/dist/
+
+# .NET build artifacts
+chess-engine/bin/
+chess-engine/obj/
+
+# OS
+.DS_Store
+Thumbs.db
+psp.txt
