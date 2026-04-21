@@ -24,7 +24,6 @@ export function registerSocketHandlers(io, nodeId, nodeAddress) {
     // (checkmate, stalemate, etc.)
     socket.on('game:over', (data) => gameManager.handleGameOver(socket, data));
 
-
     // ── Disconnect ─────────────────────────────────────────────────────────
     socket.on('disconnect', () => {
       console.log(`🔌 Disconnected: ${socket.user.username} (${socket.id})`);

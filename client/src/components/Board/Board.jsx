@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 
 // ── Enums (must match C# ChessMoveType / ChessPieceType) ─────────────────────
 const MT = { Normal: 0, CastleQueenSide: 1, CastleKingSide: 2, EnPassant: 3, PawnPromote: 4 };
@@ -6,16 +6,19 @@ const PT = { Pawn: 1, Rook: 2, Knight: 3, Bishop: 4, Queen: 5, King: 6 };
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
 
-// Maps player (1=white, 2=black) + piece type → SVG filename under /pieces/
-const PIECE_IMG = {
-  1: { 1: 'wP', 2: 'wR', 3: 'wN', 4: 'wB', 5: 'wQ', 6: 'wK' },
-  2: { 1: 'bP', 2: 'bR', 3: 'bN', 4: 'bB', 5: 'bQ', 6: 'bK' },
-};
-const pieceImg = (p, t) => `/pieces/${PIECE_IMG[p][t]}.svg`;
+const SQUARE = 64;
+const BORDER = 3;
 
-const ANIM_MS = 180;
-const SQUARE  = 64;
-const BORDER  = 3;
+// Use filled symbols for both sides — color handles the distinction
+const SYM = {
+  1: '♟', 2: '♜', 3: '♞', 4: '♝', 5: '♛', 6: '♚',
+};
+
+// White: cream fill + dark stroke.  Black: dark fill + light stroke.
+const PIECE_STYLE = {
+  1: { color: '#fffef2', WebkitTextStroke: '1.5px #2c1a0e', filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.7))' },
+  2: { color: '#1a1008', WebkitTextStroke: '1px #d4b483',   filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.5))' },
+};
 
 // ── Board state helpers ───────────────────────────────────────────────────────
 
@@ -23,8 +26,8 @@ function initBoard() {
   const b = Array.from({ length: 8 }, () => Array(8).fill(null));
   const back = [PT.Rook, PT.Knight, PT.Bishop, PT.Queen, PT.King, PT.Bishop, PT.Knight, PT.Rook];
   back.forEach((t, c) => {
-    b[0][c] = { p: 2, t };
-    b[7][c] = { p: 1, t };
+    b[0][c] = { p: 2, t }; // black back rank (row 0 = rank 8)
+    b[7][c] = { p: 1, t }; // white back rank (row 7 = rank 1)
   });
   for (let c = 0; c < 8; c++) {
     b[1][c] = { p: 2, t: PT.Pawn };
@@ -39,7 +42,7 @@ function applyMove(b, { fromRow, fromCol, toRow, toCol, type, promotion }) {
   b[fromRow][fromCol] = null;
 
   if (type === MT.EnPassant) {
-    b[fromRow][toCol] = null;
+    b[fromRow][toCol] = null; // remove captured pawn on same row, dest column
   } else if (type === MT.CastleKingSide) {
     b[fromRow][7] = null;
     b[fromRow][5] = { p: piece.p, t: PT.Rook };
@@ -55,57 +58,14 @@ function applyMove(b, { fromRow, fromCol, toRow, toCol, type, promotion }) {
   return b;
 }
 
-// ── Animated piece overlay ────────────────────────────────────────────────────
-
-// Renders a single piece that slides from (fromX,fromY) to (toX,toY).
-// `active` controls whether the translate is applied — toggled after mount
-// via requestAnimationFrame so the CSS transition actually fires.
-function AnimPiece({ piece, fromX, fromY, toX, toY }) {
-  const [active, setActive] = useState(false);
-
-  useEffect(() => {
-    const raf = requestAnimationFrame(() =>
-      requestAnimationFrame(() => setActive(true))
-    );
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  const dx = toX - fromX;
-  const dy = toY - fromY;
-
-  return (
-    <div style={{
-      position: 'absolute',
-      left: fromX + BORDER,
-      top:  fromY + BORDER,
-      width: SQUARE, height: SQUARE,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      pointerEvents: 'none',
-      zIndex: 10,
-      transform: active ? `translate(${dx}px,${dy}px)` : 'translate(0,0)',
-      transition: active ? `transform ${ANIM_MS}ms ease-in-out` : 'none',
-    }}>
-      <img src={pieceImg(piece.p, piece.t)} style={{ width: 52, height: 52 }} draggable={false} />
-    </div>
-  );
-}
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function Board({ color, moves, onMove, onGameOver: _onGameOver, disabled }) {
   const [board, setBoard]           = useState(initBoard);
-  const [selected, setSelected]     = useState(null);
-  const [legalMoves, setLegalMoves] = useState([]);
-  const [promoOpts, setPromoOpts]   = useState(null);
-  const [lastMove, setLastMove]     = useState(null);
-
-  // animSlides: array of { key, piece, fromX, fromY, toX, toY }
-  // (castling produces two slides simultaneously)
-  const [animSlides, setAnimSlides] = useState([]);
-
-  // Track which squares are hidden because their piece is mid-animation
-  // Set<"row-col">
-  const [hiddenSquares, setHiddenSquares] = useState(new Set());
+  const [selected, setSelected]     = useState(null);   // { row, col } | null
+  const [legalMoves, setLegalMoves] = useState([]);     // MoveDto[] from engine
+  const [promoOpts, setPromoOpts]   = useState(null);   // MoveDto[] (promotion choices) | null
+  const [lastMove, setLastMove]     = useState(null);   // last MoveDto for highlighting
 
   const myPlayer = color === 'white' ? 1 : 2;
   const isMyTurn = !disabled && (
@@ -113,73 +73,17 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
     (moves.length % 2 === 1 && color === 'black')
   );
 
-  // Convert logical row/col → pixel top-left within the board
-  const toPixel = (row, col) => {
-    const dr = color === 'black' ? (7 - row) : row;
-    const dc = color === 'black' ? (7 - col) : col;
-    return { x: dc * SQUARE, y: dr * SQUARE };
-  };
-
-  // ── Move animation + board update ─────────────────────────────────────────
-
+  // Replay all moves to rebuild board state whenever moves array changes
   useEffect(() => {
-    if (moves.length === 0) {
-      setBoard(initBoard());
-      setSelected(null);
-      setLegalMoves([]);
-      setLastMove(null);
-      setAnimSlides([]);
-      setHiddenSquares(new Set());
-      return;
-    }
-
-    const mv = moves[moves.length - 1];
-
-    // Rebuild board just before this move so we know what piece is moving
-    let prevBoard = initBoard();
-    for (let i = 0; i < moves.length - 1; i++) prevBoard = applyMove(prevBoard, moves[i]);
-
-    // Build the list of slides for this move (castling moves 2 pieces)
-    const slides = [];
-    const hidden = new Set();
-
-    const addSlide = (fromRow, fromCol, toRow, toCol, piece) => {
-      const from = toPixel(fromRow, fromCol);
-      const to   = toPixel(toRow,   toCol);
-      slides.push({ key: `${moves.length}-${fromRow}-${fromCol}`, piece, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y });
-      hidden.add(`${fromRow}-${fromCol}`);
-    };
-
-    const movingPiece = prevBoard[mv.fromRow][mv.fromCol];
-    addSlide(mv.fromRow, mv.fromCol, mv.toRow, mv.toCol, movingPiece);
-
-    if (mv.type === MT.CastleKingSide) {
-      const rookRow = mv.fromRow;
-      addSlide(rookRow, 7, rookRow, 5, { p: movingPiece.p, t: PT.Rook });
-    } else if (mv.type === MT.CastleQueenSide) {
-      const rookRow = mv.fromRow;
-      addSlide(rookRow, 0, rookRow, 3, { p: movingPiece.p, t: PT.Rook });
-    }
-
-    // Show pre-move board with moving pieces hidden; overlay handles them
-    setBoard(prevBoard);
-    setAnimSlides(slides);
-    setHiddenSquares(hidden);
+    let b = initBoard();
+    for (const mv of moves) b = applyMove(b, mv);
+    setBoard(b);
     setSelected(null);
     setLegalMoves([]);
+    setLastMove(moves.length > 0 ? moves[moves.length - 1] : null);
+  }, [moves]);
 
-    const t = setTimeout(() => {
-      setBoard(applyMove(prevBoard, mv));
-      setLastMove(mv);
-      setAnimSlides([]);
-      setHiddenSquares(new Set());
-    }, ANIM_MS + 20);
-
-    return () => clearTimeout(t);
-  }, [moves]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Legal moves fetch ─────────────────────────────────────────────────────
-
+  // Fetch legal moves from server whenever the selected square changes
   useEffect(() => {
     if (!selected || !isMyTurn) { setLegalMoves([]); return; }
     let alive = true;
@@ -197,10 +101,10 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
     return () => { alive = false; };
   }, [selected, isMyTurn, moves]);
 
-  // ── Click handler ─────────────────────────────────────────────────────────
+  // ── Click handler ───────────────────────────────────────────────────────────
 
   const handleSquareClick = (row, col) => {
-    if (disabled || promoOpts || animSlides.length > 0) return;
+    if (disabled || promoOpts) return;
     const piece = board[row][col];
 
     if (selected) {
@@ -208,7 +112,7 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
 
       if (candidates.length > 0) {
         if (candidates[0].type === MT.PawnPromote) {
-          setPromoOpts(candidates);
+          setPromoOpts(candidates); // show promotion dialog
         } else {
           onMove(candidates[0]);
         }
@@ -217,6 +121,7 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
         return;
       }
 
+      // Re-select own piece, or deselect
       if (piece?.p === myPlayer) {
         setSelected({ row, col });
       } else {
@@ -237,13 +142,14 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
     setPromoOpts(null);
   };
 
-  // ── Board orientation ─────────────────────────────────────────────────────
-
+  // ── Board orientation ───────────────────────────────────────────────────────
+  // White: rank 8 (row 0) at top, file a (col 0) on the left
+  // Black: rank 1 (row 7) at top, file h (col 7) on the left
   const rows  = color === 'black' ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
   const cols  = color === 'black' ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
   const files = 'abcdefgh';
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ position: 'relative', display: 'inline-block', userSelect: 'none' }}>
@@ -266,11 +172,10 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
             const isLastTo   = lastMove?.toRow   === row && lastMove?.toCol   === col;
             const piece      = board[row][col];
             const isCapture  = isLegal && piece !== null;
-            const isHidden   = hiddenSquares.has(`${row}-${col}`);
 
             let bg = light ? '#f0d9b5' : '#b58863';
-            if (isSel)                       bg = light ? '#7fc97f' : '#4e9e4e';
-            else if (isLastFrom || isLastTo) bg = light ? '#cdd26a' : '#aaa23a';
+            if (isSel)                         bg = light ? '#7fc97f' : '#4e9e4e';
+            else if (isLastFrom || isLastTo)   bg = light ? '#cdd26a' : '#aaa23a';
 
             return (
               <div
@@ -284,6 +189,7 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
                   transition: 'background 0.1s',
                 }}
               >
+                {/* Rank label — leftmost column */}
                 {ci === 0 && (
                   <span style={{
                     position: 'absolute', top: 2, left: 3,
@@ -293,6 +199,7 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
                   }}>{8 - row}</span>
                 )}
 
+                {/* File label — bottom row */}
                 {ri === 7 && (
                   <span style={{
                     position: 'absolute', bottom: 2, right: 3,
@@ -302,6 +209,7 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
                   }}>{files[col]}</span>
                 )}
 
+                {/* Legal move: dot for empty square */}
                 {isLegal && !piece && (
                   <div style={{
                     width: 22, height: 22, borderRadius: '50%',
@@ -310,6 +218,7 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
                   }} />
                 )}
 
+                {/* Legal move: ring for capture square */}
                 {isCapture && (
                   <div style={{
                     position: 'absolute', inset: 0,
@@ -320,29 +229,21 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
                   }} />
                 )}
 
-                {/* Hide piece while its animated overlay is in flight */}
-                {piece && !isHidden && (
-                  <img
-                    src={pieceImg(piece.p, piece.t)}
-                    style={{ width: 52, height: 52, zIndex: 2, pointerEvents: 'none' }}
-                    draggable={false}
-                  />
+                {/* Piece */}
+                {piece && (
+                  <span style={{
+                    fontSize: 46, lineHeight: 1,
+                    zIndex: 2, pointerEvents: 'none',
+                    ...PIECE_STYLE[piece.p],
+                  }}>
+                    {SYM[piece.t]}
+                  </span>
                 )}
               </div>
             );
           })
         )}
       </div>
-
-      {/* Sliding piece overlays (one per piece in motion) */}
-      {animSlides.map(s => (
-        <AnimPiece
-          key={s.key}
-          piece={s.piece}
-          fromX={s.fromX} fromY={s.fromY}
-          toX={s.toX}     toY={s.toY}
-        />
-      ))}
 
       {/* Promotion dialog */}
       {promoOpts && (
@@ -362,13 +263,14 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
                 key={pt}
                 onClick={() => handlePromotion(pt)}
                 style={{
-                  width: 64, height: 64,
+                  width: 64, height: 64, fontSize: 44, lineHeight: 1,
                   background: '#f0d9b5', border: '2px solid #b58863',
                   borderRadius: 6, cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  ...PIECE_STYLE[myPlayer],
                 }}
               >
-                <img src={pieceImg(myPlayer, pt)} style={{ width: 52, height: 52 }} draggable={false} />
+                {SYM[pt]}
               </button>
             ))}
           </div>

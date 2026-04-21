@@ -67,7 +67,6 @@ export default function Game() {
     };
   }, [on]);
 
-  // Called by the Board component when the local player makes a legal move
   const handleMove = useCallback((move) => {
     emit('game:move', { gameId, move });
   }, [emit, gameId]);
@@ -88,8 +87,8 @@ export default function Game() {
     return <div className="loading">Waiting for game info…</div>;
   }
 
-  const opponent = color === 'white' ? players?.black  : players?.white;
-  const me       = color === 'white' ? players?.white : players?.black;
+  const opponent      = color === 'white' ? players?.black  : players?.white;
+  const me            = color === 'white' ? players?.white  : players?.black;
   const opponentLabel = color === 'white' ? 'Black' : 'White';
   const myLabel       = color === 'white' ? 'White' : 'Black';
 
@@ -137,10 +136,10 @@ export default function Game() {
       </div>
 
       {gameOver && (() => {
-        const isCheckmate  = gameOver.reason === 'checkmate';
-        const isDraw       = gameOver.result === 'draw';
-        const iWon         = gameOver.result === color;
-        const iLost        = !isDraw && !iWon;
+        const isCheckmate = gameOver.reason === 'checkmate';
+        const isDraw      = gameOver.result === 'draw';
+        const iWon        = gameOver.result === color;
+        const iLost       = !isDraw && !iWon;
 
         const REASON_LABEL = {
           checkmate:   'Checkmate',
@@ -151,10 +150,7 @@ export default function Game() {
           disconnect:  'Opponent disconnected',
         };
 
-        const headline = isDraw
-          ? 'Draw'
-          : iWon ? 'You win!' : 'You lose';
-
+        const headline    = isDraw ? 'Draw' : iWon ? 'You win!' : 'You lose';
         const accentColor = isDraw ? '#f0c040' : iWon ? '#4caf50' : '#e53935';
         const icon        = isDraw ? '½' : iWon ? '♔' : '♚';
 

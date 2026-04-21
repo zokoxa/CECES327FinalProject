@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../lib/supabase.js';
 import { redis } from '../lib/redis.js';
 
-const QUEUE_KEY       = 'matchmaking:queue';
+const QUEUE_KEY        = 'matchmaking:queue';
 const CHESS_ENGINE_URL = process.env.CHESS_ENGINE_URL || 'http://localhost:5001';
 
 const gameKey       = (gameId)   => `game:${gameId}`;
@@ -19,6 +19,7 @@ async function validateMove(history, move) {
   return res.json();
 }
 
+// Converts a MoveDto to a UCI-style string (e.g. "e2e4", "e7e8q")
 function toUci({ fromRow, fromCol, toRow, toCol, promotion }) {
   const cols = 'abcdefgh';
   const from = `${cols[fromCol]}${8 - fromRow}`;
