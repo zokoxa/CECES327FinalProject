@@ -119,7 +119,7 @@ io.use(async (socket, next) => {
 
 // ─── Socket Handlers ─────────────────────────────────────────────────────────
 // Pass nodeId and nodeAddress so GameManager can stamp ownership and forward
-const gameManager = registerSocketHandlers(io, NODE_ID, NODE_ADDRESS);
+const gameManager = registerSocketHandlers(io, NODE_ID, NODE_ADDRESS, peerRegistry);
 app.locals.gameManager = gameManager;
 
 // ─── Start ────────────────────────────────────────────────────────────────────

@@ -4,9 +4,12 @@ import { redis } from '../lib/redis.js';
 
 const QUEUE_KEY        = 'matchmaking:queue';
 const CHESS_ENGINE_URL = process.env.CHESS_ENGINE_URL || 'http://localhost:5001';
+const PAUSED_GAMES_KEY = 'games:paused';
 
 const gameKey       = (gameId)   => `game:${gameId}`;
 const socketGameKey = (socketId) => `socket:${socketId}:game`;
+const userGameKey = (userId) => `user:${userId}:game`;
+const ownerFailoverLockKey = (gameId) => `game:${gameId}:owner-failover-lock`;
 
 // ─── Chess Engine ─────────────────────────────────────────────────────────────
 
@@ -40,11 +43,15 @@ async function saveGame(game) {
 }
 
 async function deleteGame(game) {
-  await Promise.all([
-    redis.del(gameKey(game.id)),
-    redis.del(socketGameKey(game.white.socketId)),
-    redis.del(socketGameKey(game.black.socketId)),
-  ]);
+  const keys = [gameKey(game.id)];
+
+  if (game.white?.socketId) keys.push(socketGameKey(game.white.socketId));
+  if (game.black?.socketId) keys.push(socketGameKey(game.black.socketId));
+
+  if (game.white?.userId) keys.push(userGameKey(game.white.userId));
+  if (game.black?.userId) keys.push(userGameKey(game.black.userId));
+
+  await redis.del(...keys);
 }
 
 // ─── GameManager ──────────────────────────────────────────────────────────────
@@ -55,10 +62,17 @@ export class GameManager {
    * @param {string} nodeId      - unique ID of this peer node
    * @param {string} nodeAddress - HTTP base URL of this peer (e.g. http://server:3001)
    */
-  constructor(io, nodeId, nodeAddress) {
+  constructor(io, nodeId, nodeAddress, peerRegistry) {
     this.io          = io;
     this.nodeId      = nodeId;
     this.nodeAddress = nodeAddress;
+    this.peerRegistry = peerRegistry;
+
+    this.pauseExpiryInterval = setInterval(() => {
+      this.expirePausedGames().catch((err) => {
+        console.error('Failed to expire paused games:', err);
+      });
+    }, 5000);
   }
 
   // ─── Matchmaking ────────────────────────────────────────────────────────────
@@ -98,15 +112,21 @@ export class GameManager {
         socketId: whiteSocket.id,
         userId:   whiteSocket.user.id,
         username: whiteSocket.user.username,
+        connected: true, 
+        lastSeenAt: Date.now(),
       },
       black: {
         socketId: blackSocket.id,
         userId:   blackSocket.user.id,
         username: blackSocket.user.username,
+        connected: true,
+        lastSeenAt: Date.now(),
       },
       moves:    [],
       status:   'active',
       startedAt: Date.now(),
+      updatedAt: Date.now(),
+      disconnectGraceUntil: null,
 
       // ── P2P ownership ──────────────────────────────────────────────────────
       // The node that creates the game becomes its authoritative owner.
@@ -119,6 +139,8 @@ export class GameManager {
       saveGame(game),
       redis.set(socketGameKey(whiteSocket.id), gameId),
       redis.set(socketGameKey(blackSocket.id), gameId),
+      redis.set(userGameKey(game.white.userId), gameId),
+      redis.set(userGameKey(game.black.userId), gameId),
     ]);
 
     whiteSocket.join(gameId);
@@ -138,6 +160,111 @@ export class GameManager {
     console.log(`♟  Game ${gameId} created — owner: [${this.nodeId}]`);
   }
 
+  // ─── Game Recovery ───────────────────────────────────────────────────────────
+
+  async findRecoverableGameForUser(userId) {
+    const gameId = await redis.get(userGameKey(userId));
+    if (!gameId) return null;
+
+    const game = await getGame(gameId);
+    if (!game) return null;
+
+    if (game.status !== 'active' && game.status !== 'paused') {
+      return null;
+    }
+
+    if (
+      game.status === 'paused' &&
+      game.disconnectGraceUntil &&
+      Date.now() > game.disconnectGraceUntil
+    ) {
+      return null;
+    }
+    return game;
+    }
+
+  async tryTakeOwnership(gameId) {
+    const lockKey = ownerFailoverLockKey(gameId);
+
+    const gotLock = await redis.set(lockKey, this.nodeId, 'NX', 'PX', 5000);
+    if (!gotLock) {
+      return null;
+    }
+
+    try {
+      const game = await getGame(gameId);
+      if (!game) return null;
+      if (game.ownerNodeId === this.nodeId) {
+        return game;
+      }
+
+      const ownerAddress = await this.peerRegistry.getAddress(game.ownerNodeId);
+      const ownerLooksDead = !ownerAddress;
+
+      if (!ownerLooksDead) {
+        return game;
+      }
+
+      game.ownerNodeId = this.nodeId;
+      game.ownerAddress = this.nodeAddress;
+      game.updatedAt = Date.now();
+
+      await saveGame(game);
+      return game;
+    } finally {
+      await redis.del(lockKey);
+    }
+  } 
+
+  async handleReconnectRequest(socket) {
+    const game = await this.findRecoverableGameForUser(socket.user.id);
+    if (!game) {
+      socket.emit('game:reconnectNotFound');
+      return;
+    }
+
+    const isWhite = game.white.userId === socket.user.id;
+    const side = isWhite ? game.white : game.black;
+
+    side.socketId = socket.id;
+    side.connected = true;
+    side.lastSeenAt = Date.now();
+
+    await redis.set(socketGameKey(socket.id), game.id);
+
+    socket.join(game.id);
+
+    const bothConnected = game.white.connected && game.black.connected;
+    if (bothConnected) {
+      game.status = 'active';
+      game.disconnectGraceUntil = null;
+      await redis.srem(PAUSED_GAMES_KEY, game.id);
+    }
+
+    game.updatedAt = Date.now();
+    await saveGame(game);
+
+    socket.emit('game:resume', {
+      gameId: game.id,
+      color: isWhite ? 'white' : 'black',
+      white: game.white,
+      black: game.black,
+      moves: game.moves,
+      status: game.status,
+      graceUntil: game.disconnectGraceUntil,
+    });
+
+    this.io.to(game.id).emit('game:playerReconnected', {
+      color: isWhite ? 'white' : 'black',
+    });
+
+    if (bothConnected) {
+      this.io.to(game.id).emit('game:resumed', {
+        gameId: game.id,
+      });
+    }
+  }
+
   // ─── Move Handling ───────────────────────────────────────────────────────────
 
   async handleMove(socket, { gameId, move }) {
@@ -155,7 +282,24 @@ export class GameManager {
         move,
         userId: socket.user.id,
       });
-      if (err) socket.emit('error', { message: err });
+      if (!err) return;
+
+      if (err !== 'Owner node unreachable') {
+        socket.emit('error', { message: err });
+        return;
+      }
+      const updatedGame = await this.tryTakeOwnership(gameId);
+
+      if (!updatedGame || updatedGame.ownerNodeId !== this.nodeId) {
+        socket.emit('error', { message: 'Owner node unreachable and failover failed' });
+        return;
+      }
+
+      const localErr = await this._processMove(socket.user.id, updatedGame, move);
+      if (localErr) {
+        socket.emit('error', { message: localErr });
+      }
+
       return;
     }
 
@@ -241,11 +385,53 @@ export class GameManager {
     const game = await getGame(gameId);
     if (!game) return;
 
+    await redis.srem(PAUSED_GAMES_KEY, game.id);
     await deleteGame(game);
     await supabase.from('games').update({ status: 'finished', result, reason }).eq('id', gameId);
 
     this.io.to(gameId).emit('game:over', { result, reason });
     console.log(`🏁 Game ${gameId} over — ${result} (${reason}) on [${this.nodeId}]`);
+  }
+
+  async expirePausedGames() {
+    const gameIds = await redis.smembers(PAUSED_GAMES_KEY);
+    if (!gameIds.length) return;
+
+    const now = Date.now();
+
+    for (const gameId of gameIds) {
+      const game = await getGame(gameId);
+      if (!game) {
+        await redis.srem(PAUSED_GAMES_KEY, gameId);
+        continue;
+      }
+      if (game.status !== 'paused') {
+        await redis.srem(PAUSED_GAMES_KEY, gameId);
+        continue;
+      }
+      if (game.ownerNodeId !== this.nodeId) {
+        continue;
+      }
+      if (!game.disconnectGraceUntil || now < game.disconnectGraceUntil) {
+        continue;
+      }
+
+      const whiteConnected = !!game.white?.connected;
+      const blackConnected = !!game.black?.connected;
+      let result = 'draw';
+      let reason = 'disconnect_timeout';
+
+      if (whiteConnected && !blackConnected) {
+        result = 'white';
+      } else if (!whiteConnected && blackConnected) {
+        result = 'black';
+      } else {
+        result = 'draw';
+        reason = 'abandonment';
+      }
+
+      await this.handleGameOver(null, { gameId, result, reason });
+    }
   }
 
   // ─── Resignation ─────────────────────────────────────────────────────────────
@@ -287,13 +473,31 @@ export class GameManager {
     if (!gameId) return;
 
     const game = await getGame(gameId);
-    if (game && game.status === 'active') {
-      const isWhite = game.white.userId === socket.user.id;
-      await this.handleGameOver(null, {
-        gameId,
-        result: isWhite ? 'black' : 'white',
-        reason: 'disconnect',
-      });
-    }
+    if (!game) return;
+
+    // If the game is already over, no need to do anything
+    if (game.status !== 'active') return;
+
+    const isWhite = game.white.userId === socket.user.id;
+    const side = isWhite ? game.white : game.black;
+
+    side.connected = false;
+    side.socketId = null;
+    side.lastSeenAt = Date.now();
+
+    game.status = 'paused';
+    game.disconnectGraceUntil = Date.now() + 2 * 60 * 1000; // 2 minutes
+    game.updatedAt = Date.now();
+
+    await saveGame(game);
+    await redis.sadd(PAUSED_GAMES_KEY, game.id);
+
+    this.io.to(game.id).emit('game:paused', {
+      gameId: game.id,
+      disconnectedColor: isWhite ? 'white' : 'black',
+      graceUntil: game.disconnectGraceUntil,
+    });
+
+    console.log(`Game ${game.id} paused because a player disconnected`);
   }
 }

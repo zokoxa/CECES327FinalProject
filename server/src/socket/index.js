@@ -4,12 +4,12 @@ import { GameManager } from './gameManager.js';
  * Register all Socket.io event handlers.
  * Called once during server startup with the io instance.
  */
-export function registerSocketHandlers(io, nodeId, nodeAddress) {
-  const gameManager = new GameManager(io, nodeId, nodeAddress);
+export function registerSocketHandlers(io, nodeId, nodeAddress, peerRegistry) {
+  const gameManager = new GameManager(io, nodeId, nodeAddress, peerRegistry);
 
   io.on('connection', (socket) => {
     console.log(`🔌 Connected: ${socket.user.username} (${socket.id})`);
-
+    
     // ── Matchmaking ────────────────────────────────────────────────────────
     socket.on('matchmaking:join', () => gameManager.joinQueue(socket));
     socket.on('matchmaking:leave', () => gameManager.leaveQueue(socket));
@@ -19,6 +19,7 @@ export function registerSocketHandlers(io, nodeId, nodeAddress) {
     socket.on('game:resign', (data) => gameManager.handleResign(socket, data));
     socket.on('game:drawOffer', (data) => gameManager.handleDrawOffer(socket, data));
     socket.on('game:drawAccept', (data) => gameManager.handleDrawAccept(socket, data));
+    socket.on('game:reconnectRequest', () => gameManager.handleReconnectRequest(socket));
 
     // Emitted by the client when the local chess engine detects game over
     // (checkmate, stalemate, etc.)

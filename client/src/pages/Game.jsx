@@ -24,8 +24,12 @@ export default function Game() {
   const [players, setPlayers] = useState(
     state ? { white: state.white, black: state.black } : null
   );
-  const [moves, setMoves] = useState([]);
+  const [moves, setMoves] = useState(location.state?.moves || []);
   const [gameOver, setGameOver] = useState(null);
+  const [paused, setPaused] = useState(false);
+  const [pauseMessage, setPauseMessage] = useState('');
+  const [graceUntil, setGraceUntil] = useState(null);
+  const [timeLeft, setTimeLeft] = useState('');
 
   // Fallback: if location.state was missing (edge case — socket reconnect
   // during matchmaking), fetch color and player info directly from Supabase.
@@ -53,6 +57,10 @@ export default function Game() {
   }, [gameId, color, user]);
 
   useEffect(() => {
+    emit('game:reconnectRequest');
+  }, [emit]);
+
+  useEffect(() => {
     const offMove = on('game:move', ({ move }) => {
       setMoves((prev) => [...prev, move]);
     });
@@ -61,11 +69,78 @@ export default function Game() {
       setGameOver({ result, reason });
     });
 
+    const offPaused = on('game:paused', ({ disconnectedColor, graceUntil }) => {
+      setPaused(true);
+      setGraceUntil(graceUntil);
+      setPauseMessage(`Player ${disconnectedColor} disconnected. Waiting for reconnection...`);
+    });
+
+    const offPlayerReconnected = on('game:playerReconnected', ({ color }) => {
+      setPauseMessage(`Player ${color} reconnected.`);
+    });
+
+    const offResumed = on('game:resumed', () => {
+      setPaused(false);
+      setPauseMessage('');
+      setGraceUntil(null);
+      setTimeLeft('');
+    });
+
+    const offResume = on('game:resume', ({ color, white, black, moves, status, graceUntil }) => {
+      setColor(color);
+      setPlayers({ white, black });
+      setMoves(moves || []);
+      setPaused(status === 'paused');
+      setGraceUntil(status === 'paused' ? graceUntil : null);
+
+      if (status !== 'paused') {
+        setPauseMessage('');
+        setTimeLeft('');
+      }
+    });
+
+    const offReconnectNotFound = on('game:reconnectNotFound', () => {
+      console.log('No recoverable game found');
+    });
+
+    const offConnect = on('connect', () => {
+      console.log('[CLIENT] socket connected/reconnected, requesting game recovery');
+      emit('game:reconnectRequest');
+    });
+
     return () => {
       offMove?.();
       offOver?.();
+      offPaused?.();
+      offPlayerReconnected?.();
+      offResumed?.();
+      offResume?.();
+      offReconnectNotFound?.();
+      offConnect?.();
     };
   }, [on]);
+
+  useEffect(() => {
+    if (!paused || !graceUntil) {
+      setTimeLeft('');
+      return;
+    }
+    const updateTimer = () => {
+      const msLeft = graceUntil - Date.now();
+      if (msLeft <= 0) {
+        setTimeLeft('Ending game...');
+        return;
+      }
+      const totalSeconds = Math.max(0, Math.floor(msLeft / 1000));
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      setTimeLeft(`${minutes}:${String(seconds).padStart(2, '0')}`);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [paused, graceUntil]);
 
   const handleMove = useCallback((move) => {
     emit('game:move', { gameId, move });
@@ -92,7 +167,7 @@ export default function Game() {
   const opponentLabel = color === 'white' ? 'Black' : 'White';
   const myLabel       = color === 'white' ? 'White' : 'Black';
 
-  const isMyTurn = !gameOver && (
+  const isMyTurn = !gameOver && !paused && (
     (moves.length % 2 === 0 && color === 'white') ||
     (moves.length % 2 === 1 && color === 'black')
   );
@@ -105,7 +180,25 @@ export default function Game() {
   ) : null;
 
   return (
-    <div className="game-page">
+      <div className="game-page">
+        {pauseMessage && (
+          <div style={{
+            marginBottom: 12,
+            padding: '10px 14px',
+            background: '#2a2a2a',
+            border: '1px solid #555',
+            borderRadius: 8,
+            color: '#fff',
+            textAlign: 'center',
+        }}>
+            <div>{pauseMessage}</div>
+            {paused && timeLeft && (
+              <div style={{ marginTop: 6, fontSize: 14, color: '#e3242b', fontWeight: 700 }}>
+                Time remaining: {timeLeft}
+              </div>
+            )}
+          </div>
+        )}
       <div className="game-header">
         <span>
           {opponent?.username} ({opponentLabel})
@@ -119,7 +212,7 @@ export default function Game() {
         moves={moves}
         onMove={handleMove}
         onGameOver={handleLocalGameOver}
-        disabled={!!gameOver}
+        disabled={!!gameOver || paused}
       />
 
       <div className="game-footer">
@@ -131,8 +224,8 @@ export default function Game() {
       </div>
 
       <div className="game-controls">
-        <button onClick={handleResign} disabled={!!gameOver}>Resign</button>
-        <button onClick={handleDrawOffer} disabled={!!gameOver}>Offer Draw</button>
+        <button onClick={handleResign} disabled={!!gameOver || paused}>Resign</button>
+        <button onClick={handleDrawOffer} disabled={!!gameOver || paused}>Offer Draw</button>
       </div>
 
       {gameOver && (() => {
@@ -148,6 +241,8 @@ export default function Game() {
           agreement:   'Draw by agreement',
           'fifty-move':'50-move rule',
           disconnect:  'Opponent disconnected',
+          disconnect_timeout: 'Opponent failed to reconnect in time',
+          abandonment: 'Game abandoned',
         };
 
         const headline    = isDraw ? 'Draw' : iWon ? 'You win!' : 'You lose';

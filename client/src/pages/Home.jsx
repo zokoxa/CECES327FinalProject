@@ -16,12 +16,22 @@ export default function Home() {
       setStatus('starting');
       navigate(`/game/${gameId}`, { state: { color, white, black } });
     });
+    // Recovery: resume an existing game if one is found
+    const offResume = on('game:resume', ({ gameId, color, white, black, moves }) => {
+      navigate(`/game/${gameId}`, {
+        state: { color, white, black, moves, resumed: true },
+      });
+    });
+
+    // Ask server whether this user has a recoverable game
+    emit('game:reconnectRequest');
 
     return () => {
       offWaiting?.();
       offStart?.();
+      offResume?.();
     };
-  }, [on, navigate]);
+  }, [on, emit, navigate]);
 
   const handlePlay = () => {
     setStatus('waiting');
