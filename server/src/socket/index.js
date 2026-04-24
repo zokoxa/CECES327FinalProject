@@ -19,6 +19,7 @@ export function registerSocketHandlers(io, nodeId, nodeAddress, peerRegistry) {
     socket.on('game:resign', (data) => gameManager.handleResign(socket, data));
     socket.on('game:drawOffer', (data) => gameManager.handleDrawOffer(socket, data));
     socket.on('game:drawAccept', (data) => gameManager.handleDrawAccept(socket, data));
+    socket.on('game:drawDecline', (data) => gameManager.handleDrawDecline(socket, data));
     socket.on('game:reconnectRequest', () => gameManager.handleReconnectRequest(socket));
 
     // Emitted by the client when the local chess engine detects game over
