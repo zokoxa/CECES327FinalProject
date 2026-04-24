@@ -24,12 +24,14 @@ export default function Game() {
   const [players, setPlayers] = useState(
     state ? { white: state.white, black: state.black } : null
   );
-  const [moves, setMoves] = useState(location.state?.moves || []);
+  const [moves, setMoves] = useState(state?.moves || []);
   const [gameOver, setGameOver] = useState(null);
   const [paused, setPaused] = useState(false);
   const [pauseMessage, setPauseMessage] = useState('');
   const [graceUntil, setGraceUntil] = useState(null);
   const [timeLeft, setTimeLeft] = useState('');
+  const [incomingDrawOffer, setIncomingDrawOffer] = useState(null);
+  const [drawNotice, setDrawNotice] = useState('');
 
   // Fallback: if location.state was missing (edge case — socket reconnect
   // during matchmaking), fetch color and player info directly from Supabase.
@@ -65,8 +67,22 @@ export default function Game() {
       setMoves((prev) => [...prev, move]);
     });
 
+    const offDrawOffer = on('game:drawOffer', ({ offeredByUsername } = {}) => {
+      setIncomingDrawOffer({ offeredByUsername: offeredByUsername || 'Your opponent' });
+    });
+
+    const offDrawOfferSent = on('game:drawOfferSent', () => {
+      setDrawNotice('Draw offer sent. Waiting for opponent response...');
+    });
+
+    const offDrawDeclined = on('game:drawDeclined', () => {
+      setDrawNotice('Your draw offer was declined.');
+    });
+
     const offOver = on('game:over', ({ result, reason }) => {
       setGameOver({ result, reason });
+      setIncomingDrawOffer(null);
+      setDrawNotice('');
     });
 
     const offPaused = on('game:paused', ({ disconnectedColor, graceUntil }) => {
@@ -110,6 +126,9 @@ export default function Game() {
 
     return () => {
       offMove?.();
+      offDrawOffer?.();
+      offDrawOfferSent?.();
+      offDrawDeclined?.();
       offOver?.();
       offPaused?.();
       offPlayerReconnected?.();
@@ -118,7 +137,13 @@ export default function Game() {
       offReconnectNotFound?.();
       offConnect?.();
     };
-  }, [on]);
+  }, [on, emit]);
+
+  useEffect(() => {
+    if (!drawNotice) return;
+    const timeout = setTimeout(() => setDrawNotice(''), 3500);
+    return () => clearTimeout(timeout);
+  }, [drawNotice]);
 
   useEffect(() => {
     if (!paused || !graceUntil) {
@@ -153,6 +178,16 @@ export default function Game() {
   };
 
   const handleDrawOffer = () => emit('game:drawOffer', { gameId });
+
+  const handleAcceptDrawOffer = () => {
+    emit('game:drawAccept', { gameId });
+    setIncomingDrawOffer(null);
+  };
+
+  const handleDeclineDrawOffer = () => {
+    emit('game:drawDecline', { gameId });
+    setIncomingDrawOffer(null);
+  };
 
   const handleLocalGameOver = useCallback((result, reason) => {
     emit('game:over', { gameId, result, reason });
@@ -199,6 +234,19 @@ export default function Game() {
             )}
           </div>
         )}
+        {drawNotice && (
+          <div style={{
+            marginBottom: 12,
+            padding: '10px 14px',
+            background: '#242b36',
+            border: '1px solid #4e5f7d',
+            borderRadius: 8,
+            color: '#e6ecff',
+            textAlign: 'center',
+          }}>
+            {drawNotice}
+          </div>
+        )}
       <div className="game-header">
         <span>
           {opponent?.username} ({opponentLabel})
@@ -225,8 +273,55 @@ export default function Game() {
 
       <div className="game-controls">
         <button onClick={handleResign} disabled={!!gameOver || paused}>Resign</button>
-        <button onClick={handleDrawOffer} disabled={!!gameOver || paused}>Offer Draw</button>
+        <button onClick={handleDrawOffer} disabled={!!gameOver || paused || !!incomingDrawOffer}>Offer Draw</button>
       </div>
+
+      {incomingDrawOffer && !gameOver && (
+        <div style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(0,0,0,0.55)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 90,
+        }}>
+          <div style={{
+            background: '#1e1e1e',
+            border: '1px solid #505050',
+            borderRadius: 10,
+            padding: '24px 28px',
+            minWidth: 320,
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 8 }}>
+              Draw Offer
+            </div>
+            <div style={{ color: '#d7d7d7', marginBottom: 18 }}>
+              {incomingDrawOffer.offeredByUsername} offered a draw.
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button
+                onClick={handleAcceptDrawOffer}
+                style={{
+                  background: '#4caf50', color: '#111',
+                  border: 'none', borderRadius: 6,
+                  padding: '8px 18px', fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                Accept
+              </button>
+              <button
+                onClick={handleDeclineDrawOffer}
+                style={{
+                  background: '#e0e0e0', color: '#111',
+                  border: 'none', borderRadius: 6,
+                  padding: '8px 18px', fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                Decline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {gameOver && (() => {
         const isCheckmate = gameOver.reason === 'checkmate';
