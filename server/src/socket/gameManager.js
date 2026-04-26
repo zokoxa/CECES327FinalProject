@@ -123,6 +123,7 @@ export class GameManager {
         lastSeenAt: Date.now(),
       },
       moves:    [],
+      version:  0,
       status:   'active',
       startedAt: Date.now(),
       updatedAt: Date.now(),
@@ -322,6 +323,11 @@ export class GameManager {
   }
 
   async _processMove(userId, game, move) {
+    const lockKey = `lock:game:${game.id}`;
+    const lock = await redis.set(lockKey, this.nodeId, 'NX', 'PX', 2000);
+    if (!lock) return 'Move already being processed';
+
+    try {
     const isWhiteTurn = game.moves.length % 2 === 0;
     const isWhite     = game.white.userId === userId;
 
@@ -358,6 +364,9 @@ export class GameManager {
     }
 
     return null;
+    } finally {
+      await redis.del(lockKey);
+    }
   }
 
   /**

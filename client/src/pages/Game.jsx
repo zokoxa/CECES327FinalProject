@@ -236,13 +236,16 @@ export default function Game() {
         )}
         {drawNotice && (
           <div style={{
-            marginBottom: 12,
-            padding: '10px 14px',
+            position: 'fixed', bottom: 24, left: '50%',
+            transform: 'translateX(-50%)',
             background: '#242b36',
             border: '1px solid #4e5f7d',
             borderRadius: 8,
+            padding: '10px 20px',
             color: '#e6ecff',
-            textAlign: 'center',
+            zIndex: 200,
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
           }}>
             {drawNotice}
           </div>
@@ -278,47 +281,38 @@ export default function Game() {
 
       {incomingDrawOffer && !gameOver && (
         <div style={{
-          position: 'fixed', inset: 0,
-          background: 'rgba(0,0,0,0.55)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 90,
+          position: 'fixed', bottom: 24, right: 24,
+          background: '#1e1e1e',
+          border: '1px solid #505050',
+          borderRadius: 10,
+          padding: '14px 18px',
+          zIndex: 200,
+          minWidth: 240,
         }}>
-          <div style={{
-            background: '#1e1e1e',
-            border: '1px solid #505050',
-            borderRadius: 10,
-            padding: '24px 28px',
-            minWidth: 320,
-            textAlign: 'center',
-          }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 8 }}>
-              Draw Offer
-            </div>
-            <div style={{ color: '#d7d7d7', marginBottom: 18 }}>
-              {incomingDrawOffer.offeredByUsername} offered a draw.
-            </div>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-              <button
-                onClick={handleAcceptDrawOffer}
-                style={{
-                  background: '#4caf50', color: '#111',
-                  border: 'none', borderRadius: 6,
-                  padding: '8px 18px', fontWeight: 700, cursor: 'pointer',
-                }}
-              >
-                Accept
-              </button>
-              <button
-                onClick={handleDeclineDrawOffer}
-                style={{
-                  background: '#e0e0e0', color: '#111',
-                  border: 'none', borderRadius: 6,
-                  padding: '8px 18px', fontWeight: 700, cursor: 'pointer',
-                }}
-              >
-                Decline
-              </button>
-            </div>
+          <div style={{ color: '#fff', fontWeight: 600, marginBottom: 10 }}>
+            ½ {incomingDrawOffer.offeredByUsername} offered a draw
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={handleAcceptDrawOffer}
+              style={{
+                flex: 1, background: '#4caf50', color: '#111',
+                border: 'none', borderRadius: 6,
+                padding: '6px 0', fontWeight: 700, cursor: 'pointer',
+              }}
+            >
+              Accept
+            </button>
+            <button
+              onClick={handleDeclineDrawOffer}
+              style={{
+                flex: 1, background: '#333', color: '#e0e0e0',
+                border: '1px solid #555', borderRadius: 6,
+                padding: '6px 0', fontWeight: 700, cursor: 'pointer',
+              }}
+            >
+              Decline
+            </button>
           </div>
         </div>
       )}
