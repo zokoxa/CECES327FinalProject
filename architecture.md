@@ -38,7 +38,7 @@ Browser A                        Browser B
 
                   ┌───────────────┐
                   │ chess-engine  │
-                  │   (Python)    │
+                  │  (C# / .NET)  │
                   └───────────────┘
                   move validation
                   checkmate/draw detection
@@ -70,7 +70,7 @@ Serves three distinct roles:
 | Matchmaking queue | `LPOP`/`RPUSH` via atomic Lua script |
 | Distributed locking | Per-game mutex + idempotency keys prevent double-moves |
 
-### Chess Engine (Python / Flask)
+### Chess Engine (C# / .NET 8)
 - Stateless HTTP service
 - Validates moves against the current game history
 - Detects checkmate, stalemate, and draw conditions
@@ -156,5 +156,5 @@ The correct term is **active-active clustering** — both nodes handle live traf
 | Shared state / locking | Redis (ioredis) |
 | Cross-node broadcast | Socket.io Redis adapter |
 | Persistent storage | Supabase (PostgreSQL) |
-| Move validation | Python chess engine (Flask) |
+| Move validation | C# chess engine (.NET 8) |
 | Containerisation | Docker, Docker Compose |
