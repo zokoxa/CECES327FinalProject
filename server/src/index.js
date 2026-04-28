@@ -7,6 +7,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import cors from 'cors';
 
 import authRoutes from './routes/auth.js';
+import gamesRoutes from './routes/games.js';
 import { registerSocketHandlers } from './socket/index.js';
 import { verifyToken } from './middleware/auth.js';
 import { PeerRegistry } from './lib/peerRegistry.js';
@@ -63,6 +64,7 @@ app.use(express.json());
 
 // ─── REST Routes ─────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/api/games', gamesRoutes);
 
 app.get('/api/health', (_req, res) =>
   res.json({ status: 'ok', nodeId: NODE_ID, nodeAddress: NODE_ADDRESS })
