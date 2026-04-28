@@ -6,10 +6,12 @@ const QUEUE_KEY        = 'matchmaking:queue';
 const CHESS_ENGINE_URL = process.env.CHESS_ENGINE_URL || 'http://localhost:5001';
 const PAUSED_GAMES_KEY = 'games:paused';
 
-const gameKey       = (gameId)   => `game:${gameId}`;
-const socketGameKey = (socketId) => `socket:${socketId}:game`;
-const userGameKey = (userId) => `user:${userId}:game`;
-const ownerFailoverLockKey = (gameId) => `game:${gameId}:owner-failover-lock`;
+const gameKey              = (gameId)             => `game:${gameId}`;
+const socketGameKey        = (socketId)           => `socket:${socketId}:game`;
+const userGameKey          = (userId)             => `user:${userId}:game`;
+const ownerFailoverLockKey = (gameId)             => `game:${gameId}:owner-failover-lock`;
+const lockKey              = (gameId)             => `lock:game:${gameId}`;
+const actionKey            = (gameId, moveNumber) => `action:${gameId}:${moveNumber}`;
 
 // ─── Chess Engine ─────────────────────────────────────────────────────────────
 
@@ -54,6 +56,31 @@ async function deleteGame(game) {
   await redis.del(...keys);
 }
 
+// ─── Distributed Lock ─────────────────────────────────────────────────────────
+// acquireLock returns a token if the lock was acquired, or null if already held.
+// TTL is a safety net — the lock is always explicitly released in a finally block.
+async function acquireLock(key, ttlMs = 5000) {
+  const token = uuidv4();
+  // NX = only set if key does not exist (atomic test-and-set)
+  // PX = expire after ttlMs so a crashed process can't hold forever
+  const ok = await redis.set(key, token, 'NX', 'PX', ttlMs);
+  return ok ? token : null;
+}
+
+// Releases the lock only if this process still owns it (compare-and-delete via Lua).
+// Prevents a slow process from deleting a lock re-acquired by someone else after TTL expiry.
+const RELEASE_LOCK_SCRIPT = `
+  if redis.call("GET", KEYS[1]) == ARGV[1] then
+    return redis.call("DEL", KEYS[1])
+  else
+    return 0
+  end
+`;
+
+async function releaseLock(key, token) {
+  await redis.eval(RELEASE_LOCK_SCRIPT, 1, key, token);
+}
+
 // ─── GameManager ──────────────────────────────────────────────────────────────
 
 export class GameManager {
@@ -63,9 +90,9 @@ export class GameManager {
    * @param {string} nodeAddress - HTTP base URL of this peer (e.g. http://server:3001)
    */
   constructor(io, nodeId, nodeAddress, peerRegistry) {
-    this.io          = io;
-    this.nodeId      = nodeId;
-    this.nodeAddress = nodeAddress;
+    this.io           = io;
+    this.nodeId       = nodeId;
+    this.nodeAddress  = nodeAddress;
     this.peerRegistry = peerRegistry;
 
     this.pauseExpiryInterval = setInterval(() => {
@@ -75,27 +102,50 @@ export class GameManager {
     }, 5000);
   }
 
-  // ─── Matchmaking ────────────────────────────────────────────────────────────
+  // ─── Matchmaking ─────────────────────────────────────────────────────────────
+  //
+  // Matchmaking is atomic: a single Lua script runs on Redis as one uninterruptible
+  // operation, preventing two nodes from matching the same waiting player simultaneously.
 
   async joinQueue(socket) {
-    const queue = await redis.lrange(QUEUE_KEY, 0, -1);
-    if (queue.includes(socket.id)) return;
+    const MATCHMAKING_SCRIPT = `
+      local queue = KEYS[1]
+      local me    = ARGV[1]
 
-    if (queue.length > 0) {
-      const opponentId     = await redis.lpop(QUEUE_KEY);
-      const opponentSocket = this.io.sockets.sockets.get(opponentId);
+      local opponent = redis.call('LPOP', queue)
 
-      if (!opponentSocket) {
-        await redis.rpush(QUEUE_KEY, socket.id);
-        socket.emit('matchmaking:waiting');
-        return;
-      }
+      if opponent == me then
+        redis.call('RPUSH', queue, me)
+        return false
+      end
 
-      await this._createGame(socket, opponentSocket);
-    } else {
+      if opponent then
+        return opponent
+      else
+        local members = redis.call('LRANGE', queue, 0, -1)
+        for _, v in ipairs(members) do
+          if v == me then return false end
+        end
+        redis.call('RPUSH', queue, me)
+        return false
+      end
+    `;
+
+    const opponentId = await redis.eval(MATCHMAKING_SCRIPT, 1, QUEUE_KEY, socket.id);
+
+    if (!opponentId) {
+      socket.emit('matchmaking:waiting');
+      return;
+    }
+
+    const opponentSocket = this.io.sockets.sockets.get(opponentId);
+    if (!opponentSocket) {
       await redis.rpush(QUEUE_KEY, socket.id);
       socket.emit('matchmaking:waiting');
+      return;
     }
+
+    await this._createGame(socket, opponentSocket);
   }
 
   async leaveQueue(socket) {
@@ -109,24 +159,24 @@ export class GameManager {
     const game = {
       id: gameId,
       white: {
-        socketId: whiteSocket.id,
-        userId:   whiteSocket.user.id,
-        username: whiteSocket.user.username,
-        connected: true, 
+        socketId:   whiteSocket.id,
+        userId:     whiteSocket.user.id,
+        username:   whiteSocket.user.username,
+        connected:  true,
         lastSeenAt: Date.now(),
       },
       black: {
-        socketId: blackSocket.id,
-        userId:   blackSocket.user.id,
-        username: blackSocket.user.username,
-        connected: true,
+        socketId:   blackSocket.id,
+        userId:     blackSocket.user.id,
+        username:   blackSocket.user.username,
+        connected:  true,
         lastSeenAt: Date.now(),
       },
-      moves:    [],
-      version:  0,
-      status:   'active',
-      startedAt: Date.now(),
-      updatedAt: Date.now(),
+      moves:               [],
+      version:             0,
+      status:              'active',
+      startedAt:           Date.now(),
+      updatedAt:           Date.now(),
       disconnectGraceUntil: null,
 
       // ── P2P ownership ──────────────────────────────────────────────────────
@@ -182,12 +232,12 @@ export class GameManager {
       return null;
     }
     return game;
-    }
+  }
 
   async tryTakeOwnership(gameId) {
-    const lockKey = ownerFailoverLockKey(gameId);
+    const failoverLock = ownerFailoverLockKey(gameId);
 
-    const gotLock = await redis.set(lockKey, this.nodeId, 'NX', 'PX', 5000);
+    const gotLock = await redis.set(failoverLock, this.nodeId, 'NX', 'PX', 5000);
     if (!gotLock) {
       return null;
     }
@@ -199,23 +249,23 @@ export class GameManager {
         return game;
       }
 
-      const ownerAddress = await this.peerRegistry.getAddress(game.ownerNodeId);
+      const ownerAddress  = await this.peerRegistry.getAddress(game.ownerNodeId);
       const ownerLooksDead = !ownerAddress;
 
       if (!ownerLooksDead) {
         return game;
       }
 
-      game.ownerNodeId = this.nodeId;
+      game.ownerNodeId  = this.nodeId;
       game.ownerAddress = this.nodeAddress;
-      game.updatedAt = Date.now();
+      game.updatedAt    = Date.now();
 
       await saveGame(game);
       return game;
     } finally {
-      await redis.del(lockKey);
+      await redis.del(failoverLock);
     }
-  } 
+  }
 
   async handleReconnectRequest(socket) {
     const game = await this.findRecoverableGameForUser(socket.user.id);
@@ -227,8 +277,8 @@ export class GameManager {
     const isWhite = game.white.userId === socket.user.id;
     const side = isWhite ? game.white : game.black;
 
-    side.socketId = socket.id;
-    side.connected = true;
+    side.socketId   = socket.id;
+    side.connected  = true;
     side.lastSeenAt = Date.now();
 
     await redis.set(socketGameKey(socket.id), game.id);
@@ -237,7 +287,7 @@ export class GameManager {
 
     const bothConnected = game.white.connected && game.black.connected;
     if (bothConnected) {
-      game.status = 'active';
+      game.status              = 'active';
       game.disconnectGraceUntil = null;
       await redis.srem(PAUSED_GAMES_KEY, game.id);
     }
@@ -246,12 +296,12 @@ export class GameManager {
     await saveGame(game);
 
     socket.emit('game:resume', {
-      gameId: game.id,
-      color: isWhite ? 'white' : 'black',
-      white: game.white,
-      black: game.black,
-      moves: game.moves,
-      status: game.status,
+      gameId:     game.id,
+      color:      isWhite ? 'white' : 'black',
+      white:      game.white,
+      black:      game.black,
+      moves:      game.moves,
+      status:     game.status,
       graceUntil: game.disconnectGraceUntil,
     });
 
@@ -260,9 +310,7 @@ export class GameManager {
     });
 
     if (bothConnected) {
-      this.io.to(game.id).emit('game:resumed', {
-        gameId: game.id,
-      });
+      this.io.to(game.id).emit('game:resumed', { gameId: game.id });
     }
   }
 
@@ -274,8 +322,6 @@ export class GameManager {
 
     // ── P2P forwarding ─────────────────────────────────────────────────────
     // If this node does not own the game, forward the move to the owner node.
-    // The owner will validate, persist, and broadcast the result to all nodes
-    // via the Socket.io Redis adapter.
     if (game.ownerNodeId !== this.nodeId) {
       console.log(`↪  Forwarding move to owner [${game.ownerNodeId}] at ${game.ownerAddress}`);
       const err = await this._forwardMove(game.ownerAddress, {
@@ -289,18 +335,15 @@ export class GameManager {
         socket.emit('error', { message: err });
         return;
       }
-      const updatedGame = await this.tryTakeOwnership(gameId);
 
+      const updatedGame = await this.tryTakeOwnership(gameId);
       if (!updatedGame || updatedGame.ownerNodeId !== this.nodeId) {
         socket.emit('error', { message: 'Owner node unreachable and failover failed' });
         return;
       }
 
       const localErr = await this._processMove(socket.user.id, updatedGame, move);
-      if (localErr) {
-        socket.emit('error', { message: localErr });
-      }
-
+      if (localErr) socket.emit('error', { message: localErr });
       return;
     }
 
@@ -322,50 +365,82 @@ export class GameManager {
     return this._processMove(userId, game, move);
   }
 
+  /**
+   * _processMove has two layers of duplicate-action protection.
+   *
+   * Layer 1 — Distributed lock (mutex):
+   *   Only one _processMove call for a given game can run at a time across all
+   *   nodes. A concurrent call immediately gets "Move already being processed".
+   *   The lock is released via compare-and-delete Lua so a slow process can't
+   *   accidentally release a lock it no longer owns after TTL expiry.
+   *
+   * Layer 2 — Idempotency key:
+   *   After acquiring the lock, game state is re-fetched so we see any move
+   *   that landed between the caller reading the game and us acquiring the lock.
+   *   We then write a short-lived key on (gameId + current move-number). If a
+   *   client retries the exact same move after a disconnect the key still exists
+   *   and we return early without double-applying. TTL is 30 s.
+   */
   async _processMove(userId, game, move) {
-    const lockKey = `lock:game:${game.id}`;
-    const lock = await redis.set(lockKey, this.nodeId, 'NX', 'PX', 2000);
-    if (!lock) return 'Move already being processed';
+    const mux = lockKey(game.id);
+    let lockToken = null;
 
     try {
-    const isWhiteTurn = game.moves.length % 2 === 0;
-    const isWhite     = game.white.userId === userId;
+      // ── Layer 1: acquire the per-game mutex ────────────────────────────────
+      lockToken = await acquireLock(mux, 5000);
+      if (!lockToken) return 'Move already being processed';
 
-    if (isWhiteTurn !== isWhite) return 'Not your turn';
+      // Re-fetch inside the lock to see moves that landed while we were waiting.
+      const freshGame = await getGame(game.id);
+      if (!freshGame || freshGame.status !== 'active') return 'Game not found';
 
-    let engineResult;
-    try {
-      engineResult = await validateMove(game.moves, move);
-    } catch {
-      return 'Chess engine unavailable';
-    }
+      // ── Layer 2: idempotency check ─────────────────────────────────────────
+      const idemKey      = actionKey(freshGame.id, freshGame.moves.length);
+      const alreadyApplied = await redis.set(idemKey, '1', 'NX', 'PX', 30_000);
+      if (!alreadyApplied) return 'Duplicate action rejected';
 
-    if (!engineResult.valid) return 'Invalid move';
+      // ── Turn validation ────────────────────────────────────────────────────
+      const isWhiteTurn = freshGame.moves.length % 2 === 0;
+      const isWhite     = freshGame.white.userId === userId;
+      if (isWhiteTurn !== isWhite) return 'Not your turn';
 
-    game.moves.push(move);
-    await saveGame(game);
+      // ── Chess engine validation ────────────────────────────────────────────
+      let engineResult;
+      try {
+        engineResult = await validateMove(freshGame.moves, move);
+      } catch {
+        return 'Chess engine unavailable';
+      }
+      if (!engineResult.valid) return 'Invalid move';
 
-    await supabase.from('moves').insert({
-      game_id:       game.id,
-      player_id:     userId,
-      move_number:   game.moves.length,
-      move_notation: toUci(move),
-    });
+      // ── Persist ────────────────────────────────────────────────────────────
+      freshGame.moves.push(move);
+      await saveGame(freshGame);
 
-    // Broadcast to all nodes via Redis adapter — reaches every connected client
-    this.io.to(game.id).emit('game:move', { move, moveNumber: game.moves.length });
+      await supabase.from('moves').insert({
+        game_id:       freshGame.id,
+        player_id:     userId,
+        move_number:   freshGame.moves.length,
+        move_notation: toUci(move),
+      });
 
-    if (engineResult.isCheckmate) {
-      const winner = isWhite ? 'white' : 'black';
-      await this.handleGameOver(null, { gameId: game.id, result: winner, reason: 'checkmate' });
-    } else if (engineResult.isDraw) {
-      const reason = engineResult.isStalemate ? 'stalemate' : 'fifty-move';
-      await this.handleGameOver(null, { gameId: game.id, result: 'draw', reason });
-    }
+      // Broadcast to all nodes via Redis adapter
+      this.io.to(freshGame.id).emit('game:move', { move, moveNumber: freshGame.moves.length });
 
-    return null;
+      // ── End-of-game checks ─────────────────────────────────────────────────
+      if (engineResult.isCheckmate) {
+        const winner = isWhite ? 'white' : 'black';
+        await this.handleGameOver(null, { gameId: freshGame.id, result: winner, reason: 'checkmate' });
+      } else if (engineResult.isDraw) {
+        const reason = engineResult.isStalemate ? 'stalemate' : 'fifty-move';
+        await this.handleGameOver(null, { gameId: freshGame.id, result: 'draw', reason });
+      }
+
+      return null;
+
     } finally {
-      await redis.del(lockKey);
+      // releaseLock is a no-op if lockToken is null (we never acquired the lock).
+      if (lockToken) await releaseLock(mux, lockToken);
     }
   }
 
@@ -473,9 +548,7 @@ export class GameManager {
       return;
     }
 
-    // Emit directly to the opponent's current socket id.
-    // This is more reliable than room-only delivery during reconnect edge cases.
-    const offeredBy = isWhite ? 'white' : 'black';
+    const offeredBy         = isWhite ? 'white' : 'black';
     const offeredByUsername = isWhite ? game.white.username : game.black.username;
     this.io.to(opponent.socketId).emit('game:drawOffer', {
       gameId,
@@ -522,27 +595,26 @@ export class GameManager {
     const game = await getGame(gameId);
     if (!game) return;
 
-    // If the game is already over, no need to do anything
     if (game.status !== 'active') return;
 
     const isWhite = game.white.userId === socket.user.id;
     const side = isWhite ? game.white : game.black;
 
-    side.connected = false;
-    side.socketId = null;
+    side.connected  = false;
+    side.socketId   = null;
     side.lastSeenAt = Date.now();
 
-    game.status = 'paused';
+    game.status              = 'paused';
     game.disconnectGraceUntil = Date.now() + 2 * 60 * 1000; // 2 minutes
-    game.updatedAt = Date.now();
+    game.updatedAt           = Date.now();
 
     await saveGame(game);
     await redis.sadd(PAUSED_GAMES_KEY, game.id);
 
     this.io.to(game.id).emit('game:paused', {
-      gameId: game.id,
+      gameId:            game.id,
       disconnectedColor: isWhite ? 'white' : 'black',
-      graceUntil: game.disconnectGraceUntil,
+      graceUntil:        game.disconnectGraceUntil,
     });
 
     console.log(`Game ${game.id} paused because a player disconnected`);
