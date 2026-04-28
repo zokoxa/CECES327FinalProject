@@ -9,10 +9,17 @@ export function registerSocketHandlers(io, nodeId, nodeAddress, nodeRegistry) {
 
   io.on('connection', (socket) => {
     console.log(`🔌 Connected: ${socket.user.username} (${socket.id})`);
-    
+    gameManager.handleConnect(socket);
+
     // ── Matchmaking ────────────────────────────────────────────────────────
     socket.on('matchmaking:join', () => gameManager.joinQueue(socket));
     socket.on('matchmaking:leave', () => gameManager.leaveQueue(socket));
+
+    // ── Invites ────────────────────────────────────────────────────────────
+    socket.on('invite:send',    (data) => gameManager.handleInviteSend(socket, data));
+    socket.on('invite:accept',  (data) => gameManager.handleInviteAccept(socket, data));
+    socket.on('invite:decline', (data) => gameManager.handleInviteDecline(socket, data));
+    socket.on('invite:cancel',  (data) => gameManager.handleInviteCancel(socket, data));
 
     // ── In-game Events ─────────────────────────────────────────────────────
     socket.on('game:move', (data) => gameManager.handleMove(socket, data));
@@ -22,8 +29,6 @@ export function registerSocketHandlers(io, nodeId, nodeAddress, nodeRegistry) {
     socket.on('game:drawDecline', (data) => gameManager.handleDrawDecline(socket, data));
     socket.on('game:reconnectRequest', () => gameManager.handleReconnectRequest(socket));
 
-    // Emitted by the client when the local chess engine detects game over
-    // (checkmate, stalemate, etc.)
     socket.on('game:over', (data) => gameManager.handleGameOver(socket, data));
 
     // ── Disconnect ─────────────────────────────────────────────────────────

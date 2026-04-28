@@ -78,6 +78,20 @@ app.get('/api/nodes', async (_req, res) => {
 
 const CHESS_ENGINE_URL = process.env.CHESS_ENGINE_URL || 'http://localhost:5001';
 
+// Proxy to chess engine — validates a single move and returns game-state flags
+app.post('/api/game/validate', async (req, res) => {
+  try {
+    const upstream = await fetch(`${CHESS_ENGINE_URL}/validate`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(req.body),
+    });
+    res.json(await upstream.json());
+  } catch {
+    res.status(503).json({ error: 'Chess engine unavailable' });
+  }
+});
+
 // Proxy to chess engine — returns all legal moves for a given position
 app.post('/api/game/moves', async (req, res) => {
   try {

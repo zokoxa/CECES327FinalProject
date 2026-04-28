@@ -9,6 +9,8 @@ const PAUSED_GAMES_KEY = 'games:paused';
 const gameKey              = (gameId)             => `game:${gameId}`;
 const socketGameKey        = (socketId)           => `socket:${socketId}:game`;
 const userGameKey          = (userId)             => `user:${userId}:game`;
+const userSocketKey        = (userId)             => `user:${userId}:socket`;
+const inviteKey            = (inviteeId)          => `invite:${inviteeId}`;
 const ownerFailoverLockKey = (gameId)             => `game:${gameId}:owner-failover-lock`;
 const lockKey              = (gameId)             => `lock:game:${gameId}`;
 const actionKey            = (gameId, moveNumber) => `action:${gameId}:${moveNumber}`;
@@ -145,7 +147,10 @@ export class GameManager {
       return;
     }
 
-    await this._createGame(socket, opponentSocket);
+    await this._createGame(
+      { socketId: socket.id,         userId: socket.user.id,         username: socket.user.username },
+      { socketId: opponentSocket.id, userId: opponentSocket.user.id, username: opponentSocket.user.username }
+    );
   }
 
   async leaveQueue(socket) {
@@ -154,22 +159,24 @@ export class GameManager {
 
   // ─── Game Lifecycle ──────────────────────────────────────────────────────────
 
-  async _createGame(whiteSocket, blackSocket) {
+  // white / black: { socketId, userId, username }
+  // Sockets do not need to be local — uses io.in() for cross-node room joins.
+  async _createGame(white, black) {
     const gameId = uuidv4();
     const owner  = await this.nodeRegistry.getLeastLoadedNode();
     const game = {
       id: gameId,
       white: {
-        socketId:   whiteSocket.id,
-        userId:     whiteSocket.user.id,
-        username:   whiteSocket.user.username,
+        socketId:   white.socketId,
+        userId:     white.userId,
+        username:   white.username,
         connected:  true,
         lastSeenAt: Date.now(),
       },
       black: {
-        socketId:   blackSocket.id,
-        userId:     blackSocket.user.id,
-        username:   blackSocket.user.username,
+        socketId:   black.socketId,
+        userId:     black.userId,
+        username:   black.username,
         connected:  true,
         lastSeenAt: Date.now(),
       },
@@ -189,14 +196,15 @@ export class GameManager {
 
     await Promise.all([
       saveGame(game),
-      redis.set(socketGameKey(whiteSocket.id), gameId),
-      redis.set(socketGameKey(blackSocket.id), gameId),
+      redis.set(socketGameKey(white.socketId), gameId),
+      redis.set(socketGameKey(black.socketId), gameId),
       redis.set(userGameKey(game.white.userId), gameId),
       redis.set(userGameKey(game.black.userId), gameId),
     ]);
 
-    whiteSocket.join(gameId);
-    blackSocket.join(gameId);
+    // socketsJoin works across nodes via the Redis adapter
+    await this.io.in(white.socketId).socketsJoin(gameId);
+    await this.io.in(black.socketId).socketsJoin(gameId);
 
     await supabase.from('games').insert({
       id:       gameId,
@@ -208,8 +216,8 @@ export class GameManager {
     await this.nodeRegistry.incrementLoad(owner.nodeId);
 
     const payload = { gameId, white: game.white, black: game.black };
-    whiteSocket.emit('game:start', { ...payload, color: 'white' });
-    blackSocket.emit('game:start', { ...payload, color: 'black' });
+    this.io.to(white.socketId).emit('game:start', { ...payload, color: 'white' });
+    this.io.to(black.socketId).emit('game:start', { ...payload, color: 'black' });
 
     console.log(`♟  Game ${gameId} created — owner: [${owner.nodeId}] (load-balanced)`);
   }
@@ -591,9 +599,113 @@ export class GameManager {
     this.io.to(opponent.socketId).emit('game:drawDeclined', { gameId });
   }
 
+  // ─── Connection tracking ──────────────────────────────────────────────────────
+
+  async handleConnect(socket) {
+    await redis.set(userSocketKey(socket.user.id), socket.id, 'EX', 86400);
+  }
+
+  // ─── Invites ──────────────────────────────────────────────────────────────────
+
+  async handleInviteSend(socket, { targetUsername } = {}) {
+    if (!targetUsername) return;
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, username')
+      .eq('username', targetUsername)
+      .single();
+
+    if (!profile) {
+      socket.emit('invite:error', { message: 'User not found' });
+      return;
+    }
+    if (profile.id === socket.user.id) {
+      socket.emit('invite:error', { message: 'You cannot invite yourself' });
+      return;
+    }
+
+    const targetSocketId = await redis.get(userSocketKey(profile.id));
+    if (!targetSocketId) {
+      socket.emit('invite:error', { message: `${targetUsername} is not online` });
+      return;
+    }
+
+    const targetGameId = await redis.get(userGameKey(profile.id));
+    if (targetGameId) {
+      socket.emit('invite:error', { message: `${targetUsername} is already in a game` });
+      return;
+    }
+
+    await redis.set(
+      inviteKey(profile.id),
+      JSON.stringify({ fromUserId: socket.user.id, fromUsername: socket.user.username }),
+      'EX', 60
+    );
+
+    this.io.to(targetSocketId).emit('invite:incoming', {
+      fromUsername: socket.user.username,
+      fromUserId:   socket.user.id,
+    });
+
+    socket.emit('invite:sent', { toUsername: targetUsername, toUserId: profile.id });
+    console.log(`📩 ${socket.user.username} invited ${targetUsername}`);
+  }
+
+  async handleInviteAccept(socket, { fromUserId } = {}) {
+    const raw = await redis.get(inviteKey(socket.user.id));
+    if (!raw) {
+      socket.emit('invite:error', { message: 'Invite expired or was cancelled' });
+      return;
+    }
+
+    const { fromUserId: storedId, fromUsername } = JSON.parse(raw);
+    if (storedId !== fromUserId) {
+      socket.emit('invite:error', { message: 'Invite mismatch' });
+      return;
+    }
+
+    await redis.del(inviteKey(socket.user.id));
+
+    const inviterSocketId = await redis.get(userSocketKey(fromUserId));
+    if (!inviterSocketId) {
+      socket.emit('invite:error', { message: `${fromUsername} is no longer online` });
+      return;
+    }
+
+    const inviterGameId   = await redis.get(userGameKey(fromUserId));
+    const acceptorGameId  = await redis.get(userGameKey(socket.user.id));
+    if (inviterGameId || acceptorGameId) {
+      socket.emit('invite:error', { message: 'A player is already in a game' });
+      return;
+    }
+
+    await this._createGame(
+      { socketId: inviterSocketId, userId: fromUserId,       username: fromUsername },
+      { socketId: socket.id,       userId: socket.user.id,   username: socket.user.username }
+    );
+  }
+
+  async handleInviteDecline(socket, { fromUserId } = {}) {
+    await redis.del(inviteKey(socket.user.id));
+    const inviterSocketId = await redis.get(userSocketKey(fromUserId));
+    if (inviterSocketId) {
+      this.io.to(inviterSocketId).emit('invite:declined', { byUsername: socket.user.username });
+    }
+  }
+
+  async handleInviteCancel(socket, { targetUserId } = {}) {
+    await redis.del(inviteKey(targetUserId));
+    const targetSocketId = await redis.get(userSocketKey(targetUserId));
+    if (targetSocketId) {
+      this.io.to(targetSocketId).emit('invite:cancelled');
+    }
+  }
+
   // ─── Disconnect ───────────────────────────────────────────────────────────────
 
   async handleDisconnect(socket) {
+    await redis.del(userSocketKey(socket.user.id));
     await this.leaveQueue(socket);
 
     const gameId = await redis.get(socketGameKey(socket.id));

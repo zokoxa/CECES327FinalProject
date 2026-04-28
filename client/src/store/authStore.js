@@ -40,8 +40,8 @@ export const useAuthStore = create((set) => ({
     return data;
   },
 
-  signOut: async () => {
-    await supabase.auth.signOut();
+  signOut: () => {
     set({ session: null, user: null, username: null });
+    supabase.auth.signOut().catch(() => {});
   },
 }));

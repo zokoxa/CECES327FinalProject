@@ -4,6 +4,7 @@ import { useAuthStore } from './store/authStore.js';
 import { useSocketStore } from './store/socketStore.js';
 import Home from './pages/Home.jsx';
 import Game from './pages/Game.jsx';
+import LocalGame from './pages/LocalGame.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
 
@@ -32,6 +33,7 @@ export default function App() {
       <Route path="/signup" element={<Signup />} />
       <Route path="/" element={<PrivateRoute><Home /></PrivateRoute>} />
       <Route path="/game/:gameId" element={<PrivateRoute><Game /></PrivateRoute>} />
+      <Route path="/computer" element={<PrivateRoute><LocalGame /></PrivateRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
