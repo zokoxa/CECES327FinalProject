@@ -19,10 +19,10 @@ export class PeerRegistry {
   /** Write this node into the registry (called on startup). */
   async register() {
     await this._write();
-    console.log(`🌐 Peer [${this.nodeId}] registered — ${this.nodeAddress}`);
+    console.log(`🌐 Node [${this.nodeId}] registered — ${this.nodeAddress}`);
   }
 
-  /** Periodically refresh lastSeen so other nodes know this peer is alive. */
+  /** Periodically refresh lastSeen so other nodes know this node is alive. */
   startHeartbeat() {
     setInterval(() => this._write(), HEARTBEAT_INTERVAL);
   }
@@ -30,7 +30,7 @@ export class PeerRegistry {
   /** Remove this node from the registry (called on graceful shutdown). */
   async deregister() {
     await this.redis.hdel(REGISTRY_KEY, this.nodeId);
-    console.log(`🔌 Peer [${this.nodeId}] deregistered`);
+    console.log(`🔌 Node [${this.nodeId}] deregistered`);
   }
 
   /** Return the HTTP address of a specific node, or null if unknown/stale. */
@@ -42,7 +42,7 @@ export class PeerRegistry {
     return info.address;
   }
 
-  /** Return all currently active peers (excluding stale entries). */
+  /** Return all currently active nodes (excluding stale entries). */
   async getAll() {
     const all = (await this.redis.hgetall(REGISTRY_KEY)) ?? {};
     const now = Date.now();

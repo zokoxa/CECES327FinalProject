@@ -12,9 +12,9 @@ import { registerSocketHandlers } from './socket/index.js';
 import { verifyToken } from './middleware/auth.js';
 import { PeerRegistry } from './lib/peerRegistry.js';
 
-// ─── Peer Identity ──────────────────────────────────────────────────────────
+// ─── Node Identity ───────────────────────────────────────────────────────────
 // Each node must be given a unique NODE_ID and its own reachable NODE_ADDRESS
-// (the HTTP URL other peers will use to forward moves to this node).
+// (the HTTP URL other nodes will use to route moves to this node).
 const PORT         = process.env.PORT         || 3001;
 const NODE_ID      = process.env.NODE_ID      || 'peer-1';
 const NODE_ADDRESS = process.env.NODE_ADDRESS || `http://localhost:${PORT}`;

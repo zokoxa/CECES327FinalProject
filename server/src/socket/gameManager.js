@@ -86,8 +86,8 @@ async function releaseLock(key, token) {
 export class GameManager {
   /**
    * @param {import('socket.io').Server} io
-   * @param {string} nodeId      - unique ID of this peer node
-   * @param {string} nodeAddress - HTTP base URL of this peer (e.g. http://server:3001)
+   * @param {string} nodeId      - unique ID of this server node
+   * @param {string} nodeAddress - HTTP base URL of this node (e.g. http://server:3001)
    */
   constructor(io, nodeId, nodeAddress, peerRegistry) {
     this.io           = io;
@@ -179,7 +179,7 @@ export class GameManager {
       updatedAt:           Date.now(),
       disconnectGraceUntil: null,
 
-      // ── P2P ownership ──────────────────────────────────────────────────────
+      // ── Game ownership ─────────────────────────────────────────────────────
       // The node that creates the game becomes its authoritative owner.
       // All move validation and state updates must go through the owner.
       ownerNodeId:  this.nodeId,
@@ -320,10 +320,10 @@ export class GameManager {
     const game = await getGame(gameId);
     if (!game || game.status !== 'active') return;
 
-    // ── P2P forwarding ─────────────────────────────────────────────────────
+    // ── Cross-node forwarding ──────────────────────────────────────────────
     // If this node does not own the game, forward the move to the owner node.
     if (game.ownerNodeId !== this.nodeId) {
-      console.log(`↪  Forwarding move to owner [${game.ownerNodeId}] at ${game.ownerAddress}`);
+      console.log(`↪  Routing move to owner node [${game.ownerNodeId}] at ${game.ownerAddress}`);
       const err = await this._forwardMove(game.ownerAddress, {
         gameId,
         move,
@@ -355,7 +355,7 @@ export class GameManager {
   /**
    * Core move processor — only called on the owner node.
    * Can be invoked directly (local socket) or via the /internal/move endpoint
-   * (forwarded from a non-owner peer).
+   * (routed from a non-owner node).
    *
    * @returns {string|null} error message, or null on success
    */
@@ -445,7 +445,7 @@ export class GameManager {
   }
 
   /**
-   * HTTP POST to the owner node's /internal/move endpoint.
+   * HTTP POST to the owner node's /internal/move endpoint (cross-node routing).
    * @returns {string|null} error message, or null on success
    */
   async _forwardMove(ownerAddress, payload) {

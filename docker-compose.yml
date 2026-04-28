@@ -9,7 +9,7 @@ services:
     depends_on:
       - redis
 
-  # ── Peer node 1 ─────────────────────────────────────────────────────────────
+  # ── Game node 1 ──────────────────────────────────────────────────────────────
   server:
     build: ./server
     restart: unless-stopped
@@ -31,9 +31,9 @@ services:
       timeout: 5s
       retries: 10
 
-  # ── Peer node 2 ─────────────────────────────────────────────────────────────
+  # ── Game node 2 ──────────────────────────────────────────────────────────────
   # A second independent game node. Handles its own games as the authoritative
-  # owner; forwards moves to the correct owner when receiving moves for games
+  # owner; routes moves to the correct owner when receiving moves for games
   # it does not own.
   server2:
     build: ./server
