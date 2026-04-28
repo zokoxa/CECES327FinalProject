@@ -91,7 +91,7 @@ Future work will focus on strengthening evaluation rigor and production-readines
 
 - introduce quantitative performance experiments (latency, reconnect success rate, failover recovery time),
 - implement formal integration and chaos-style fault-injection tests,
-- improve security isolation for internal peer-to-peer forwarding paths,
+- improve security isolation for internal server-to-server forwarding paths,
 - add ranking and rating updates as a consistency case study for transactional workflows,
 - support spectator and replay pipelines with complete PGN export,
 - migrate to managed cloud infrastructure for horizontal scaling experiments.
