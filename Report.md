@@ -24,7 +24,7 @@ Chess was selected because it imposes deterministic rules, strict turn ordering,
 
 Accordingly, the project serves as a hands-on exercise in distributed architecture design, not only a feature-complete game clone.
 
-## Model (Methedology)
+## Model (Methodology)
 
 The methodology follows a service-oriented model with explicit authority and data-boundary decisions. The implementation is organized into four layers.
 
@@ -73,15 +73,31 @@ The project achieved the intended functional and educational outcomes.
 
 From a system perspective, the implementation provides:
 
-- successful containerized deployment via Docker Compose,
+- successful containerized deployment via Docker Compose across five services (Redis, chess engine, two server nodes, and client),
 - real-time matchmaking and gameplay across multiple server nodes,
 - authoritative move validation through the external chess-engine service,
 - synchronized cross-node event propagation using Redis adapter integration,
 - pause-and-resume game handling for disconnect and reconnect scenarios,
 - owner failover logic when the designated authority node is unreachable,
-- persistent recording of games and move history in Supabase.
+- persistent recording of games and move history in Supabase,
+- load-balanced game placement assigning each new game to the least-loaded node,
+- invite-by-username allowing players to challenge a specific opponent directly,
+- Play vs Computer mode powered by the Stockfish engine at eight difficulty levels,
+- game history sidebar and move-by-move replay of completed games.
 
-From a learning perspective, the project concretely demonstrated distributed systems concepts, including state partitioning, heartbeat-based node discovery, authority transfer, and trade-offs between operational simplicity and fault tolerance. While the prototype is not yet production hardened, it successfully functions as a course-level distributed systems artifact with clear evidence of architectural reasoning.
+From a learning perspective, the project concretely demonstrated distributed systems concepts, including state partitioning, heartbeat-based node discovery, authority transfer, atomic matchmaking via Lua scripting, and trade-offs between operational simplicity and fault tolerance. While the prototype is not yet production hardened, it successfully functions as a course-level distributed systems artifact with clear evidence of architectural reasoning.
+
+## Lessons Learned
+
+Building this system surfaced several insights that theory alone does not convey.
+
+Distributed state is harder than distributed computation. Keeping game state consistent across two nodes — particularly under concurrent move submissions and mid-game disconnects — required more careful design than any single algorithmic component. The combination of a distributed mutex, idempotency keys, and an authoritative owner node proved necessary; removing any one of these layers during development immediately produced observable race conditions.
+
+Operational boundaries matter. Separating the chess engine into its own stateless HTTP service made move validation independently testable and kept the coordination layer focused on orchestration rather than game rules. This boundary also made it straightforward to call the engine from whichever node owned a given game.
+
+Fault tolerance requires explicit design. Disconnect handling, grace-period timers, and owner failover did not emerge naturally from the base architecture — each had to be designed and implemented as a distinct mechanism. The paused-game expiry loop and the `tryTakeOwnership` path represent non-trivial additions that would be easy to omit in a prototype but are essential for a usable system.
+
+Atomicity at the queue level is critical. Early versions of matchmaking allowed the same player to be matched twice when two nodes processed the queue simultaneously. The Redis Lua script that makes queue removal and match creation atomic was a targeted fix that eliminated this class of bug entirely.
 
 ## Conclusion (Future work)
 

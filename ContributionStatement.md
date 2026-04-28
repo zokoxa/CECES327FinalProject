@@ -1,6 +1,6 @@
 # Contribution Statement
 ### CECS 327 Final Project — Chessmate
-### Team Leader: Hector
+### Team Leader: Hector Soltero
 
 ---
 
@@ -12,8 +12,8 @@
 | Loc Le | Distributed Architecture | Convert centralized design to distributed node-style architecture |
 | Jennifer Bui | Event History | Game replay; event history with ordered moves; game recovery after disconnect |
 | Reymes Olide | Event History | Game replay; reconnect/recover game state; node failure recovery |
-| Arturo F. | Concurrency Control | Atomic matchmaking — safe queue removal and match creation |
-| Adiyan H. | Concurrency Control | Owner node enforcement; move version numbers; duplicate action rejection; atomic matchmaking |
+| Arturo Flores | Concurrency Control | Atomic matchmaking — safe queue removal and match creation |
+| Adiyan Hossain | Concurrency Control | Owner node enforcement; move version numbers; duplicate action rejection; atomic matchmaking |
 
 ---
 
@@ -46,22 +46,22 @@
 - Ensured game state is not lost on node failure because all accepted moves are durably recorded in Supabase before the result is broadcast
 - Handled which node the user reconnects to and how the recovering node retrieves the game state
 
-### Arturo F.
+### Arturo Flores
 **Area 3 — Concurrency Control (Atomic Matchmaking)**
 - Made matchmaking atomic using a Redis Lua script: queue removal and match creation execute as a single indivisible operation
 - Prevents the race condition where two nodes simultaneously pull the same waiting player, or one player is matched twice
 - Ensured the matchmaking queue is safe under concurrent access across multiple server nodes
 
-### Adiyan H.
+### Adiyan Hossain
 **Area 3 — Concurrency Control (Owner Node & Move Versioning)**
 - Enforced single-owner processing: each game has exactly one active owner node; only that node may commit state changes, preventing two servers from updating the same game simultaneously
 - Implemented move version numbers (idempotency keys): each accepted move is tied to the expected next move number; late-arriving or retried moves referencing a stale version are rejected
 - Implemented duplicate action rejection: if a disconnect or timeout causes a move to be retried, the idempotency key ensures it cannot be applied twice
-- Also contributed to atomic matchmaking alongside Arturo F.
+- Also contributed to atomic matchmaking alongside Arturo Flores
 
 ---
 
 ## Notes
 
-- Load balancing (Area 4 from the project breakdown — game placement rules and per-node active-game metrics) was designed but not fully implemented in the submitted version.
+- Load balancing (Area 4 from the project breakdown) is implemented: each new game is assigned to the least-loaded node via `getLeastLoadedNode()`, and each node tracks its active game count via `incrementLoad()`.
 - Confirm all full legal names match your official course enrollment before submitting.
