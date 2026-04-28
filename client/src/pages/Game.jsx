@@ -1,17 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useSocket } from '../hooks/useSocket.js';
+import { useReplay } from '../hooks/useReplay.js';
 import { useAuthStore } from '../store/authStore.js';
 import { supabase } from '../lib/supabase.js';
 import Board from '../components/Board/Board.jsx';
-
-const FILES = 'abcdefgh';
-function toUci({ fromRow, fromCol, toRow, toCol, promotion }) {
-  const from = `${FILES[fromCol]}${8 - fromRow}`;
-  const to   = `${FILES[toCol]}${8 - toRow}`;
-  const promo = promotion ? ['', 'p', 'r', 'n', 'b', 'q', 'k'][promotion] : '';
-  return `${from}${to}${promo}`;
-}
+import ReplayPanel from '../components/Replay/ReplayPanel.jsx';
 
 export default function Game() {
   const { gameId } = useParams();
@@ -19,17 +13,30 @@ export default function Game() {
   const navigate = useNavigate();
   const { state } = useLocation();
   const user = useAuthStore((s) => s.user);
+  const historyReplay = !!state?.historyReplay;
 
   const [color, setColor] = useState(state?.color ?? null);
   const [players, setPlayers] = useState(
     state ? { white: state.white, black: state.black } : null
   );
-  const [moves, setMoves] = useState(location.state?.moves || []);
-  const [gameOver, setGameOver] = useState(null);
+  const [moves, setMoves] = useState(state?.moves || []);
+  const [gameOver, setGameOver] = useState(state?.gameOver ?? null);
+  const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [paused, setPaused] = useState(false);
   const [pauseMessage, setPauseMessage] = useState('');
   const [graceUntil, setGraceUntil] = useState(null);
   const [timeLeft, setTimeLeft] = useState('');
+
+  const {
+    replayIndex,
+    replayMoves,
+    isReplayMode,
+    jumpStart,
+    stepBack,
+    stepForward,
+    jumpEnd,
+    jumpToMove,
+  } = useReplay(moves, (state?.moves || []).length);
 
   // Fallback: if location.state was missing (edge case — socket reconnect
   // during matchmaking), fetch color and player info directly from Supabase.
@@ -57,10 +64,13 @@ export default function Game() {
   }, [gameId, color, user]);
 
   useEffect(() => {
+    if (historyReplay) return;
     emit('game:reconnectRequest');
-  }, [emit]);
+  }, [emit, historyReplay]);
 
   useEffect(() => {
+    if (historyReplay) return;
+
     const offMove = on('game:move', ({ move }) => {
       setMoves((prev) => [...prev, move]);
     });
@@ -118,7 +128,11 @@ export default function Game() {
       offReconnectNotFound?.();
       offConnect?.();
     };
-  }, [on]);
+  }, [on, historyReplay, emit]);
+
+  useEffect(() => {
+    if (gameOver && !historyReplay) setShowGameOverModal(true);
+  }, [gameOver, historyReplay]);
 
   useEffect(() => {
     if (!paused || !graceUntil) {
@@ -166,6 +180,9 @@ export default function Game() {
   const me            = color === 'white' ? players?.white  : players?.black;
   const opponentLabel = color === 'white' ? 'Black' : 'White';
   const myLabel       = color === 'white' ? 'White' : 'Black';
+  const replayEnabled = historyReplay || !!gameOver;
+  const boardMoves = replayEnabled ? replayMoves : moves;
+  const boardInReplayMode = replayEnabled && isReplayMode;
 
   const isMyTurn = !gameOver && !paused && (
     (moves.length % 2 === 0 && color === 'white') ||
@@ -209,10 +226,10 @@ export default function Game() {
 
       <Board
         color={color}
-        moves={moves}
+        moves={boardMoves}
         onMove={handleMove}
         onGameOver={handleLocalGameOver}
-        disabled={!!gameOver || paused}
+        disabled={historyReplay || !!gameOver || paused || boardInReplayMode}
       />
 
       <div className="game-footer">
@@ -223,12 +240,27 @@ export default function Game() {
         </span>
       </div>
 
-      <div className="game-controls">
-        <button onClick={handleResign} disabled={!!gameOver || paused}>Resign</button>
-        <button onClick={handleDrawOffer} disabled={!!gameOver || paused}>Offer Draw</button>
-      </div>
+      {!historyReplay && (
+        <div className="game-controls">
+          <button onClick={handleResign} disabled={!!gameOver || paused}>Resign</button>
+          <button onClick={handleDrawOffer} disabled={!!gameOver || paused}>Offer Draw</button>
+        </div>
+      )}
 
-      {gameOver && (() => {
+      {replayEnabled && (
+        <ReplayPanel
+          moves={moves}
+          replayIndex={replayIndex}
+          isReplayMode={isReplayMode}
+          onJumpStart={jumpStart}
+          onStepBack={stepBack}
+          onStepForward={stepForward}
+          onJumpEnd={jumpEnd}
+          onJumpToMove={jumpToMove}
+        />
+      )}
+
+      {gameOver && showGameOverModal && !historyReplay && (() => {
         const isCheckmate = gameOver.reason === 'checkmate';
         const isDraw      = gameOver.result === 'draw';
         const iWon        = gameOver.result === color;
@@ -281,6 +313,18 @@ export default function Game() {
                 {REASON_LABEL[gameOver.reason] ?? gameOver.reason}
               </div>
               <button
+                onClick={() => setShowGameOverModal(false)}
+                style={{
+                  background: '#888', color: '#111',
+                  border: 'none', borderRadius: 6,
+                  padding: '10px 28px', fontSize: 15,
+                  fontWeight: 700, cursor: 'pointer',
+                  marginRight: 10,
+                }}
+              >
+                Review Replay
+              </button>
+              <button
                 onClick={() => navigate('/')}
                 style={{
                   background: accentColor, color: '#000',
@@ -296,12 +340,6 @@ export default function Game() {
         );
       })()}
 
-      <aside className="move-list">
-        <h3>Moves</h3>
-        <ol>
-          {moves.map((m, i) => <li key={i}>{toUci(m)}</li>)}
-        </ol>
-      </aside>
     </div>
   );
 }
