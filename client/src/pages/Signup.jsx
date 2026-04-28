@@ -31,7 +31,7 @@ export default function Signup() {
 
   return (
     <div className="auth-page">
-      <h1>♟ Chess Clone</h1>
+      <h1>♟ Chessmate</h1>
       <form onSubmit={handleSubmit} className="auth-form">
         <h2>Create Account</h2>
         {error && <p className="error">{error}</p>}

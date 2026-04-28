@@ -2,13 +2,13 @@
 
 ## Abstract
 
-This report presents the design and implementation of a distributed real-time chess application developed as a course project to study core distributed systems concepts. Although the user-facing product resembles a Chess.com-style platform, the primary objective is pedagogical: to investigate service decomposition, consistency of shared state, fault tolerance, and inter-node coordination under real-time constraints. The system integrates a React client, Node.js Socket.IO peer servers, Redis-backed coordination, Supabase-based identity and persistence, and a C# chess engine for authoritative rule validation. The final implementation demonstrates a functional multi-node architecture with reconnect support, owner-node failover behavior, and reproducible deployment through Docker Compose.
+This report presents the design and implementation of a distributed real-time chess application developed as a course project to study core distributed systems concepts. Although the user-facing product resembles a Chess.com-style platform, the primary objective is pedagogical: to investigate service decomposition, consistency of shared state, fault tolerance, and inter-node coordination under real-time constraints. The system integrates a React client, Node.js Socket.IO server nodes, Redis-backed coordination, Supabase-based identity and persistence, and a C# chess engine for authoritative rule validation. The final implementation demonstrates a functional multi-node architecture with reconnect support, owner-node failover behavior, and reproducible deployment through Docker Compose.
 
 ## Introduction
 
-Building a networked chess platform requires strict correctness guarantees and low interaction latency. In a single-node implementation, this requirement is already non-trivial; in a distributed setting, additional concerns emerge, including coordination between peers, recovery from node unavailability, and synchronization of transient and durable state. This project addresses these concerns through a modular architecture that separates presentation, coordination, validation, and persistence responsibilities.
+Building a networked chess platform requires strict correctness guarantees and low interaction latency. In a single-node implementation, this requirement is already non-trivial; in a distributed setting, additional concerns emerge, including coordination between server nodes, recovery from node unavailability, and synchronization of transient and durable state. This project addresses these concerns through a modular architecture that separates presentation, coordination, validation, and persistence responsibilities.
 
-The resulting system consists of: (1) a browser client for gameplay and matchmaking interactions, (2) multiple Node.js peer servers responsible for real-time communication and game orchestration, (3) a dedicated chess engine service that validates legal moves, and (4) storage services for operational and persistent data. This structure provides a practical environment for evaluating distributed systems principles in an interactive application domain.
+The resulting system consists of: (1) a browser client for gameplay and matchmaking interactions, (2) multiple Node.js server nodes responsible for real-time communication and game orchestration, (3) a dedicated chess engine service that validates legal moves, and (4) storage services for operational and persistent data. This structure provides a practical environment for evaluating distributed systems principles in an interactive application domain.
 
 ## Motivation
 
@@ -19,7 +19,7 @@ Chess was selected because it imposes deterministic rules, strict turn ordering,
 - consistency and ordering in concurrent environments,
 - state ownership and authority boundaries,
 - reliability under client and server disconnection events,
-- coordination across peer nodes, and
+- coordination across server nodes, and
 - integration of transient in-memory state with durable storage.
 
 Accordingly, the project serves as a hands-on exercise in distributed architecture design, not only a feature-complete game clone.
@@ -32,18 +32,18 @@ The methodology follows a service-oriented model with explicit authority and dat
 The client manages rendering of the board, move interactions, matchmaking requests, reconnect requests, and user-facing game status updates. Real-time communication is handled through authenticated Socket.IO sessions.
 
 2. Distributed coordination layer (Node.js + Socket.IO + Redis adapter)
-Multiple peer servers run concurrently. Each game is assigned an owner node responsible for authoritative state transitions. Redis is used both as a pub/sub transport for cross-node Socket.IO room broadcasts and as an operational data store for matchmaking queues, active game records, and reconnect metadata.
+Multiple server nodes run concurrently. Each game is assigned an owner node responsible for authoritative state transitions. Redis is used both as a pub/sub transport for cross-node Socket.IO room broadcasts and as an operational data store for matchmaking queues, active game records, and reconnect metadata.
 
 3. Rule-validation layer (C# chess engine)
 Move legality is validated by a separate chess-engine service exposed through HTTP endpoints. This design externalizes rule computation from the client and prevents acceptance of invalid moves at the coordination layer.
 
 4. Persistence and identity layer (Supabase + Redis)
-Supabase stores durable entities (profiles, games, and moves), while Redis stores volatile coordination state (queue membership, socket-game associations, paused-game timers, and peer heartbeats). This separation reduces coupling between real-time orchestration and historical record keeping.
+Supabase stores durable entities (profiles, games, and moves), while Redis stores volatile coordination state (queue membership, socket-game associations, paused-game timers, and node heartbeats). This separation reduces coupling between real-time orchestration and historical record keeping.
 
 Operational sequence:
 
 - users authenticate and join matchmaking,
-- a peer server creates a game and becomes owner,
+- a server node creates a game and becomes owner,
 - clients submit moves via Socket.IO,
 - the owner validates moves through the chess engine,
 - accepted moves are persisted and broadcast to all participants,
@@ -54,7 +54,7 @@ This sequence reflects a practical distributed workflow with explicit handling f
 
 ## Problem
 
-The central problem is to maintain a correct and responsive multiplayer chess session when state and communication are distributed across multiple services and peer servers.
+The central problem is to maintain a correct and responsive multiplayer chess session when state and communication are distributed across multiple services and server nodes.
 
 Formally, the system must satisfy the following requirements:
 
@@ -62,7 +62,7 @@ Formally, the system must satisfy the following requirements:
 - Ordering: turns must remain consistent under asynchronous message delivery.
 - Liveness: active games should continue despite temporary disconnects.
 - Recoverability: clients should be able to reconnect to recoverable sessions.
-- Availability: peer-node unavailability should not permanently block game progress.
+- Availability: node unavailability should not permanently block game progress.
 - Durability: completed actions should be persisted for post-game retrieval and analysis.
 
 The implementation addresses these requirements through owner-based authority, external move validation, Redis-backed coordination, and persistent game/move storage.
@@ -74,14 +74,14 @@ The project achieved the intended functional and educational outcomes.
 From a system perspective, the implementation provides:
 
 - successful containerized deployment via Docker Compose,
-- real-time matchmaking and gameplay across multiple peer servers,
+- real-time matchmaking and gameplay across multiple server nodes,
 - authoritative move validation through the external chess-engine service,
 - synchronized cross-node event propagation using Redis adapter integration,
 - pause-and-resume game handling for disconnect and reconnect scenarios,
 - owner failover logic when the designated authority node is unreachable,
 - persistent recording of games and move history in Supabase.
 
-From a learning perspective, the project concretely demonstrated distributed systems concepts, including state partitioning, heartbeat-based peer discovery, authority transfer, and trade-offs between operational simplicity and fault tolerance. While the prototype is not yet production hardened, it successfully functions as a course-level distributed systems artifact with clear evidence of architectural reasoning.
+From a learning perspective, the project concretely demonstrated distributed systems concepts, including state partitioning, heartbeat-based node discovery, authority transfer, and trade-offs between operational simplicity and fault tolerance. While the prototype is not yet production hardened, it successfully functions as a course-level distributed systems artifact with clear evidence of architectural reasoning.
 
 ## Conclusion (Future work)
 

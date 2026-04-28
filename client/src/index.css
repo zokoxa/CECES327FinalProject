@@ -51,6 +51,30 @@ body {
 .error { color: #e06c75; font-size: 0.9rem; }
 
 /* ── Home / Lobby ──────────────────────────────── */
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.logout-btn {
+  padding: 0.4rem 1.1rem;
+  border: 1.5px solid #c0392b;
+  border-radius: 20px;
+  background: transparent;
+  color: #e57368;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+}
+
+.logout-btn:hover {
+  background: #c0392b;
+  color: #fff;
+}
+
 .home-page header {
   display: flex;
   justify-content: space-between;

@@ -4,8 +4,6 @@
 
 This project is a real-time multiplayer chess application built on a **horizontally scaled client-server architecture** — specifically an **active-active server cluster**. Two identical backend nodes share state through Redis and serve clients simultaneously.
 
-The word "peer" in the codebase refers to the two *server nodes* being peers of each other (equal rank, no master/slave).
-
 ---
 
 ## Architecture Diagram
@@ -17,7 +15,7 @@ Browser A                        Browser B
     ▼                                ▼
 ┌──────────────┐   HTTP move   ┌──────────────┐
 │   server     │◄─────────────►│   server2    │
-│   peer-1     │   forwarding  │   peer-2     │
+│   node-1     │   forwarding  │   node-2     │
 │  :3001       │               │  :3002       │
 └──────────────┘               └──────────────┘
         │                             │
@@ -56,7 +54,7 @@ Browser A                        Browser B
 - Has no knowledge of which server node it is connected to
 
 ### Server Nodes (Node.js + Express + Socket.io)
-- Two identical instances (`peer-1`, `peer-2`) run simultaneously
+- Two identical instances (`node-1`, `node-2`) run simultaneously
 - Either node can accept any player connection
 - Each game has one **owner node** — the node that created the game is authoritative for that game's state
 - If a move arrives at the non-owner node, it is forwarded to the owner via HTTP (`POST /internal/move`)
@@ -91,7 +89,7 @@ When two players are matched, the node that ran `_createGame` becomes the **owne
 
 ```json
 {
-  "ownerNodeId": "peer-1",
+  "ownerNodeId": "node-1",
   "ownerAddress": "http://server:3001"
 }
 ```

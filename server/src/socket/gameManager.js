@@ -89,11 +89,11 @@ export class GameManager {
    * @param {string} nodeId      - unique ID of this server node
    * @param {string} nodeAddress - HTTP base URL of this node (e.g. http://server:3001)
    */
-  constructor(io, nodeId, nodeAddress, peerRegistry) {
+  constructor(io, nodeId, nodeAddress, nodeRegistry) {
     this.io           = io;
     this.nodeId       = nodeId;
     this.nodeAddress  = nodeAddress;
-    this.peerRegistry = peerRegistry;
+    this.nodeRegistry = nodeRegistry;
 
     this.pauseExpiryInterval = setInterval(() => {
       this.expirePausedGames().catch((err) => {
@@ -156,6 +156,7 @@ export class GameManager {
 
   async _createGame(whiteSocket, blackSocket) {
     const gameId = uuidv4();
+    const owner  = await this.nodeRegistry.getLeastLoadedNode();
     const game = {
       id: gameId,
       white: {
@@ -180,10 +181,10 @@ export class GameManager {
       disconnectGraceUntil: null,
 
       // ── Game ownership ─────────────────────────────────────────────────────
-      // The node that creates the game becomes its authoritative owner.
+      // The owner is chosen by the placement rule: least active games wins.
       // All move validation and state updates must go through the owner.
-      ownerNodeId:  this.nodeId,
-      ownerAddress: this.nodeAddress,
+      ownerNodeId:  owner.nodeId,
+      ownerAddress: owner.address,
     };
 
     await Promise.all([
@@ -204,11 +205,13 @@ export class GameManager {
       status:   'active',
     });
 
+    await this.nodeRegistry.incrementLoad(owner.nodeId);
+
     const payload = { gameId, white: game.white, black: game.black };
     whiteSocket.emit('game:start', { ...payload, color: 'white' });
     blackSocket.emit('game:start', { ...payload, color: 'black' });
 
-    console.log(`♟  Game ${gameId} created — owner: [${this.nodeId}]`);
+    console.log(`♟  Game ${gameId} created — owner: [${owner.nodeId}] (load-balanced)`);
   }
 
   // ─── Game Recovery ───────────────────────────────────────────────────────────
@@ -249,18 +252,21 @@ export class GameManager {
         return game;
       }
 
-      const ownerAddress  = await this.peerRegistry.getAddress(game.ownerNodeId);
+      const ownerAddress  = await this.nodeRegistry.getAddress(game.ownerNodeId);
       const ownerLooksDead = !ownerAddress;
 
       if (!ownerLooksDead) {
         return game;
       }
 
+      const previousOwner  = game.ownerNodeId;
       game.ownerNodeId  = this.nodeId;
       game.ownerAddress = this.nodeAddress;
       game.updatedAt    = Date.now();
 
       await saveGame(game);
+      await this.nodeRegistry.decrementLoad(previousOwner);
+      await this.nodeRegistry.incrementLoad(this.nodeId);
       return game;
     } finally {
       await redis.del(failoverLock);
@@ -471,6 +477,7 @@ export class GameManager {
 
     await redis.srem(PAUSED_GAMES_KEY, game.id);
     await deleteGame(game);
+    await this.nodeRegistry.decrementLoad(game.ownerNodeId);
     await supabase.from('games').update({ status: 'finished', result, reason }).eq('id', gameId);
 
     this.io.to(gameId).emit('game:over', { result, reason });

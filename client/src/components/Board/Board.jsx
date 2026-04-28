@@ -9,16 +9,8 @@ const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
 const SQUARE = 64;
 const BORDER = 3;
 
-// Use filled symbols for both sides — color handles the distinction
-const SYM = {
-  1: '♟', 2: '♜', 3: '♞', 4: '♝', 5: '♛', 6: '♚',
-};
-
-// White: cream fill + dark stroke.  Black: dark fill + light stroke.
-const PIECE_STYLE = {
-  1: { color: '#fffef2', WebkitTextStroke: '1.5px #2c1a0e', filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.7))' },
-  2: { color: '#1a1008', WebkitTextStroke: '1px #d4b483',   filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.5))' },
-};
+const PIECE_LETTER = { 1: 'p', 2: 'r', 3: 'n', 4: 'b', 5: 'q', 6: 'k' };
+const pieceImg = (player, type) => `/pieces/${player === 1 ? 'w' : 'b'}${PIECE_LETTER[type]}.png`;
 
 // ── Board state helpers ───────────────────────────────────────────────────────
 
@@ -231,13 +223,12 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
 
                 {/* Piece */}
                 {piece && (
-                  <span style={{
-                    fontSize: 46, lineHeight: 1,
-                    zIndex: 2, pointerEvents: 'none',
-                    ...PIECE_STYLE[piece.p],
-                  }}>
-                    {SYM[piece.t]}
-                  </span>
+                  <img
+                    src={pieceImg(piece.p, piece.t)}
+                    style={{ width: 56, height: 56, zIndex: 2, pointerEvents: 'none' }}
+                    draggable={false}
+                    alt=""
+                  />
                 )}
               </div>
             );
@@ -263,14 +254,14 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
                 key={pt}
                 onClick={() => handlePromotion(pt)}
                 style={{
-                  width: 64, height: 64, fontSize: 44, lineHeight: 1,
+                  width: 64, height: 64,
                   background: '#f0d9b5', border: '2px solid #b58863',
                   borderRadius: 6, cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  ...PIECE_STYLE[myPlayer],
+                  padding: 4,
                 }}
               >
-                {SYM[pt]}
+                <img src={pieceImg(myPlayer, pt)} style={{ width: 52, height: 52 }} draggable={false} alt="" />
               </button>
             ))}
           </div>

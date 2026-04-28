@@ -10,13 +10,13 @@ import authRoutes from './routes/auth.js';
 import gamesRoutes from './routes/games.js';
 import { registerSocketHandlers } from './socket/index.js';
 import { verifyToken } from './middleware/auth.js';
-import { PeerRegistry } from './lib/peerRegistry.js';
+import { NodeRegistry } from './lib/nodeRegistry.js';
 
 // ─── Node Identity ───────────────────────────────────────────────────────────
 // Each node must be given a unique NODE_ID and its own reachable NODE_ADDRESS
 // (the HTTP URL other nodes will use to route moves to this node).
 const PORT         = process.env.PORT         || 3001;
-const NODE_ID      = process.env.NODE_ID      || 'peer-1';
+const NODE_ID      = process.env.NODE_ID      || 'node-1';
 const NODE_ADDRESS = process.env.NODE_ADDRESS || `http://localhost:${PORT}`;
 
 const app        = express();
@@ -24,7 +24,7 @@ const httpServer = createServer(app);
 
 // ─── Socket.io with Redis adapter ───────────────────────────────────────────
 // The Redis pub/sub adapter lets io.to(room).emit() reach clients connected
-// to ANY peer node — the backbone of cross-node broadcasting.
+// to any server node — the backbone of cross-node broadcasting.
 const io = new Server(httpServer, {
   cors: {
     origin: process.env.CLIENT_URL || 'http://localhost:5173',
@@ -43,18 +43,18 @@ pubClient.on('error', (err) => {
   console.warn('⚠️  Redis unavailable — running without distributed adapter:', err.message);
 });
 
-// ─── Peer Registry ──────────────────────────────────────────────────────────
-const peerRegistry = new PeerRegistry(pubClient, NODE_ID, NODE_ADDRESS);
+// ─── Node Registry ──────────────────────────────────────────────────────────
+const nodeRegistry = new NodeRegistry(pubClient, NODE_ID, NODE_ADDRESS);
 
 // Register this node and start the heartbeat after Redis connects
 pubClient.once('connect', async () => {
-  await peerRegistry.register();
-  peerRegistry.startHeartbeat();
+  await nodeRegistry.register();
+  nodeRegistry.startHeartbeat();
 });
 
-// Graceful shutdown — remove from registry so peers stop routing to this node
+// Graceful shutdown — deregister so other nodes stop forwarding to this one
 process.on('SIGTERM', async () => {
-  await peerRegistry.deregister();
+  await nodeRegistry.deregister();
   process.exit(0);
 });
 
@@ -70,10 +70,10 @@ app.get('/api/health', (_req, res) =>
   res.json({ status: 'ok', nodeId: NODE_ID, nodeAddress: NODE_ADDRESS })
 );
 
-// List all live peer nodes — useful for debugging / demo
-app.get('/api/peers', async (_req, res) => {
-  const peers = await peerRegistry.getAll();
-  res.json({ nodeId: NODE_ID, peers });
+// List all live cluster nodes — useful for debugging / demo
+app.get('/api/nodes', async (_req, res) => {
+  const nodes = await nodeRegistry.getAll();
+  res.json({ nodeId: NODE_ID, nodes });
 });
 
 const CHESS_ENGINE_URL = process.env.CHESS_ENGINE_URL || 'http://localhost:5001';
@@ -92,7 +92,7 @@ app.post('/api/game/moves', async (req, res) => {
   }
 });
 
-// ─── Internal Peer Endpoint ──────────────────────────────────────────────────
+// ─── Internal Node Endpoint ──────────────────────────────────────────────────
 // Non-owner nodes POST here to forward a player's move to the owner node.
 // Only reachable within the Docker network (no JWT check needed).
 app.post('/internal/move', async (req, res) => {
@@ -121,7 +121,7 @@ io.use(async (socket, next) => {
 
 // ─── Socket Handlers ─────────────────────────────────────────────────────────
 // Pass nodeId and nodeAddress so GameManager can stamp ownership and forward
-const gameManager = registerSocketHandlers(io, NODE_ID, NODE_ADDRESS, peerRegistry);
+const gameManager = registerSocketHandlers(io, NODE_ID, NODE_ADDRESS, nodeRegistry);
 app.locals.gameManager = gameManager;
 
 // ─── Start ────────────────────────────────────────────────────────────────────

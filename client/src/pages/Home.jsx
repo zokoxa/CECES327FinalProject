@@ -106,10 +106,10 @@ export default function Home() {
   return (
     <div className="home-page">
       <header>
-        <h1>♟ Chess Clone</h1>
+        <h1>♟ Chessmate</h1>
         <div className="user-info">
           <span>Hello, {username || user?.email?.split('@')[0] || 'User'}</span>
-          <button onClick={signOut}>Log out</button>
+          <button className="logout-btn" onClick={signOut}>Log out</button>
         </div>
       </header>
 

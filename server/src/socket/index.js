@@ -4,8 +4,8 @@ import { GameManager } from './gameManager.js';
  * Register all Socket.io event handlers.
  * Called once during server startup with the io instance.
  */
-export function registerSocketHandlers(io, nodeId, nodeAddress, peerRegistry) {
-  const gameManager = new GameManager(io, nodeId, nodeAddress, peerRegistry);
+export function registerSocketHandlers(io, nodeId, nodeAddress, nodeRegistry) {
+  const gameManager = new GameManager(io, nodeId, nodeAddress, nodeRegistry);
 
   io.on('connection', (socket) => {
     console.log(`🔌 Connected: ${socket.user.username} (${socket.id})`);
