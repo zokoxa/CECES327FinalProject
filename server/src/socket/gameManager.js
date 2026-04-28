@@ -123,6 +123,7 @@ export class GameManager {
         lastSeenAt: Date.now(),
       },
       moves:    [],
+      version:  0,
       status:   'active',
       startedAt: Date.now(),
       updatedAt: Date.now(),
@@ -322,6 +323,11 @@ export class GameManager {
   }
 
   async _processMove(userId, game, move) {
+    const lockKey = `lock:game:${game.id}`;
+    const lock = await redis.set(lockKey, this.nodeId, 'NX', 'PX', 2000);
+    if (!lock) return 'Move already being processed';
+
+    try {
     const isWhiteTurn = game.moves.length % 2 === 0;
     const isWhite     = game.white.userId === userId;
 
@@ -358,6 +364,9 @@ export class GameManager {
     }
 
     return null;
+    } finally {
+      await redis.del(lockKey);
+    }
   }
 
   /**
@@ -450,18 +459,56 @@ export class GameManager {
 
   // ─── Draw Offer ──────────────────────────────────────────────────────────────
 
-  async handleDrawOffer(socket, { gameId }) {
+  async handleDrawOffer(socket, { gameId } = {}) {
     const game = await getGame(gameId);
-    if (!game) return;
+    if (!game || game.status !== 'active') return;
 
-    const opponentId =
-      game.white.userId === socket.user.id ? game.black.socketId : game.white.socketId;
+    const isWhite = game.white.userId === socket.user.id;
+    const isBlack = game.black.userId === socket.user.id;
+    if (!isWhite && !isBlack) return;
 
-    this.io.sockets.sockets.get(opponentId)?.emit('game:drawOffer');
+    const opponent = isWhite ? game.black : game.white;
+    if (!opponent?.socketId || opponent.connected === false) {
+      socket.emit('error', { message: 'Opponent is not connected' });
+      return;
+    }
+
+    // Emit directly to the opponent's current socket id.
+    // This is more reliable than room-only delivery during reconnect edge cases.
+    const offeredBy = isWhite ? 'white' : 'black';
+    const offeredByUsername = isWhite ? game.white.username : game.black.username;
+    this.io.to(opponent.socketId).emit('game:drawOffer', {
+      gameId,
+      offeredBy,
+      offeredByUsername,
+    });
+
+    socket.emit('game:drawOfferSent', { gameId });
   }
 
-  async handleDrawAccept(socket, { gameId }) {
+  async handleDrawAccept(socket, { gameId } = {}) {
+    const game = await getGame(gameId);
+    if (!game || game.status !== 'active') return;
+
+    const isWhite = game.white.userId === socket.user.id;
+    const isBlack = game.black.userId === socket.user.id;
+    if (!isWhite && !isBlack) return;
+
     await this.handleGameOver(null, { gameId, result: 'draw', reason: 'agreement' });
+  }
+
+  async handleDrawDecline(socket, { gameId } = {}) {
+    const game = await getGame(gameId);
+    if (!game || game.status !== 'active') return;
+
+    const isWhite = game.white.userId === socket.user.id;
+    const isBlack = game.black.userId === socket.user.id;
+    if (!isWhite && !isBlack) return;
+
+    const opponent = isWhite ? game.black : game.white;
+    if (!opponent?.socketId) return;
+
+    this.io.to(opponent.socketId).emit('game:drawDeclined', { gameId });
   }
 
   // ─── Disconnect ───────────────────────────────────────────────────────────────

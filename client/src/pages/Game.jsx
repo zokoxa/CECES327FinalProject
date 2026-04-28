@@ -26,6 +26,8 @@ export default function Game() {
   const [pauseMessage, setPauseMessage] = useState('');
   const [graceUntil, setGraceUntil] = useState(null);
   const [timeLeft, setTimeLeft] = useState('');
+  const [incomingDrawOffer, setIncomingDrawOffer] = useState(null);
+  const [drawNotice, setDrawNotice] = useState('');
 
   const {
     replayIndex,
@@ -75,8 +77,22 @@ export default function Game() {
       setMoves((prev) => [...prev, move]);
     });
 
+    const offDrawOffer = on('game:drawOffer', ({ offeredByUsername } = {}) => {
+      setIncomingDrawOffer({ offeredByUsername: offeredByUsername || 'Your opponent' });
+    });
+
+    const offDrawOfferSent = on('game:drawOfferSent', () => {
+      setDrawNotice('Draw offer sent. Waiting for opponent response...');
+    });
+
+    const offDrawDeclined = on('game:drawDeclined', () => {
+      setDrawNotice('Your draw offer was declined.');
+    });
+
     const offOver = on('game:over', ({ result, reason }) => {
       setGameOver({ result, reason });
+      setIncomingDrawOffer(null);
+      setDrawNotice('');
     });
 
     const offPaused = on('game:paused', ({ disconnectedColor, graceUntil }) => {
@@ -120,6 +136,9 @@ export default function Game() {
 
     return () => {
       offMove?.();
+      offDrawOffer?.();
+      offDrawOfferSent?.();
+      offDrawDeclined?.();
       offOver?.();
       offPaused?.();
       offPlayerReconnected?.();
@@ -133,6 +152,12 @@ export default function Game() {
   useEffect(() => {
     if (gameOver && !historyReplay) setShowGameOverModal(true);
   }, [gameOver, historyReplay]);
+
+  useEffect(() => {
+    if (!drawNotice) return;
+    const timeout = setTimeout(() => setDrawNotice(''), 3500);
+    return () => clearTimeout(timeout);
+  }, [drawNotice]);
 
   useEffect(() => {
     if (!paused || !graceUntil) {
@@ -167,6 +192,16 @@ export default function Game() {
   };
 
   const handleDrawOffer = () => emit('game:drawOffer', { gameId });
+
+  const handleAcceptDrawOffer = () => {
+    emit('game:drawAccept', { gameId });
+    setIncomingDrawOffer(null);
+  };
+
+  const handleDeclineDrawOffer = () => {
+    emit('game:drawDecline', { gameId });
+    setIncomingDrawOffer(null);
+  };
 
   const handleLocalGameOver = useCallback((result, reason) => {
     emit('game:over', { gameId, result, reason });
@@ -216,6 +251,22 @@ export default function Game() {
             )}
           </div>
         )}
+        {drawNotice && (
+          <div style={{
+            position: 'fixed', bottom: 24, left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#242b36',
+            border: '1px solid #4e5f7d',
+            borderRadius: 8,
+            padding: '10px 20px',
+            color: '#e6ecff',
+            zIndex: 200,
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+          }}>
+            {drawNotice}
+          </div>
+        )}
       <div className="game-header">
         <span>
           {opponent?.username} ({opponentLabel})
@@ -243,7 +294,45 @@ export default function Game() {
       {!historyReplay && (
         <div className="game-controls">
           <button onClick={handleResign} disabled={!!gameOver || paused}>Resign</button>
-          <button onClick={handleDrawOffer} disabled={!!gameOver || paused}>Offer Draw</button>
+          <button onClick={handleDrawOffer} disabled={!!gameOver || paused || !!incomingDrawOffer}>Offer Draw</button>
+        </div>
+      )}
+
+      {incomingDrawOffer && !gameOver && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24,
+          background: '#1e1e1e',
+          border: '1px solid #505050',
+          borderRadius: 10,
+          padding: '14px 18px',
+          zIndex: 200,
+          minWidth: 240,
+        }}>
+          <div style={{ color: '#fff', fontWeight: 600, marginBottom: 10 }}>
+            ½ {incomingDrawOffer.offeredByUsername} offered a draw
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={handleAcceptDrawOffer}
+              style={{
+                flex: 1, background: '#4caf50', color: '#111',
+                border: 'none', borderRadius: 6,
+                padding: '6px 0', fontWeight: 700, cursor: 'pointer',
+              }}
+            >
+              Accept
+            </button>
+            <button
+              onClick={handleDeclineDrawOffer}
+              style={{
+                flex: 1, background: '#333', color: '#e0e0e0',
+                border: '1px solid #555', borderRadius: 6,
+                padding: '6px 0', fontWeight: 700, cursor: 'pointer',
+              }}
+            >
+              Decline
+            </button>
+          </div>
         </div>
       )}
 
