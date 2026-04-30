@@ -273,6 +273,11 @@ export default function Game() {
           {turnIndicator(!isMyTurn)}
           {!isMyTurn && !gameOver && <span style={{ marginLeft: 6, fontSize: 12, color: '#4caf50' }}>thinking…</span>}
         </span>
+        {historyReplay && (
+          <button onClick={() => navigate('/')} style={{ marginLeft: 'auto', padding: '0.35rem 1rem', border: 'none', borderRadius: 6, background: '#444', color: '#f0f0f0', cursor: 'pointer', fontSize: 13 }}>
+            ← Home
+          </button>
+        )}
       </div>
 
       <Board
@@ -291,11 +296,7 @@ export default function Game() {
         </span>
       </div>
 
-      {historyReplay ? (
-        <div className="game-controls">
-          <button onClick={() => navigate('/')}>Back to Home</button>
-        </div>
-      ) : (
+      {!historyReplay && (
         <div className="game-controls">
           <button onClick={handleResign} disabled={!!gameOver || paused}>Resign</button>
           <button onClick={handleDrawOffer} disabled={!!gameOver || paused || !!incomingDrawOffer}>Offer Draw</button>
