@@ -96,6 +96,15 @@ router.post('/request', requireAuth, async (req, res) => {
   });
 
   if (error) return res.status(500).json({ error: 'Failed to send friend request' });
+
+  const targetSocketId = await redis.get(userSocketKey(target.id));
+  if (targetSocketId) {
+    req.app.locals.io.to(targetSocketId).emit('friend:request', {
+      id: req.user.id,
+      username: req.user.username,
+    });
+  }
+
   res.json({ message: `Friend request sent to ${target.username}` });
 });
 
@@ -113,6 +122,15 @@ router.post('/accept', requireAuth, async (req, res) => {
     .maybeSingle();
 
   if (error || !data) return res.status(404).json({ error: 'Friend request not found' });
+
+  const requesterSocketId = await redis.get(userSocketKey(requesterId));
+  if (requesterSocketId) {
+    req.app.locals.io.to(requesterSocketId).emit('friend:accepted', {
+      id: req.user.id,
+      username: req.user.username,
+    });
+  }
+
   res.json({ message: 'Friend request accepted' });
 });
 

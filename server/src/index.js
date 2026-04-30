@@ -139,6 +139,7 @@ io.use(async (socket, next) => {
 // Pass nodeId and nodeAddress so GameManager can stamp ownership and forward
 const gameManager = registerSocketHandlers(io, NODE_ID, NODE_ADDRESS, nodeRegistry);
 app.locals.gameManager = gameManager;
+app.locals.io = io;
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 httpServer.listen(PORT, () => {

@@ -107,10 +107,19 @@ export default function Home() {
     });
     const offInviteCancelled = on('invite:cancelled', () => setIncomingInvite(null));
 
+    const offFriendRequest = on('friend:request', ({ id, username }) => {
+      setPendingIncoming((prev) => prev.some(r => r.id === id) ? prev : [...prev, { id, username }]);
+    });
+
+    const offFriendAccepted = on('friend:accepted', ({ id, username }) => {
+      setFriends((prev) => prev.some(f => f.id === id) ? prev : [...prev, { id, username, online: true }]);
+    });
+
     return () => {
       offWaiting?.(); offStart?.(); offResume?.();
       offInviteSent?.(); offInviteError?.(); offInviteIncoming?.();
       offInviteDeclined?.(); offInviteCancelled?.();
+      offFriendRequest?.(); offFriendAccepted?.();
     };
   }, [on, emit, navigate]);
 
