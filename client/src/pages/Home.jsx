@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore.js';
 import { useSocket } from '../hooks/useSocket.js';
@@ -9,28 +9,37 @@ const LEVEL_NAMES = ['Beginner', 'Novice', 'Amateur', 'Intermediate', 'Club', 'A
 export default function Home() {
   const { username, user, session, signOut } = useAuthStore();
   const { emit, on } = useSocket();
-  const [status, setStatus] = useState('idle'); // 'idle' | 'waiting' | 'starting'
+  const [status, setStatus] = useState('idle');
   const [level, setLevel] = useState(3);
 
   // Invite state
   const [inviteInput, setInviteInput]       = useState('');
-  const [inviteStatus, setInviteStatus]     = useState(null); // null | 'sending' | 'sent' | 'error'
+  const [inviteStatus, setInviteStatus]     = useState(null);
   const [inviteMsg, setInviteMsg]           = useState('');
   const [inviteTargetId, setInviteTargetId] = useState(null);
-  const [incomingInvite, setIncomingInvite] = useState(null); // { fromUsername, fromUserId }
-  const [history, setHistory] = useState([]);
+  const [incomingInvite, setIncomingInvite] = useState(null);
+
+  // History state
+  const [history, setHistory]               = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState('');
+  const [historyError, setHistoryError]     = useState('');
   const [replayLoadingId, setReplayLoadingId] = useState(null);
+
+  // Friends state
+  const [friends, setFriends]               = useState([]);
+  const [pendingIncoming, setPendingIncoming] = useState([]);
+  const [friendsLoading, setFriendsLoading] = useState(false);
+  const [addFriendStatus, setAddFriendStatus] = useState(null);
+  const [addFriendMsg, setAddFriendMsg]     = useState('');
+
   const navigate = useNavigate();
 
+  // ── Fetch game history ────────────────────────────────────────────────────
   useEffect(() => {
     if (!session?.access_token) return;
-
     let alive = true;
     setHistoryLoading(true);
     setHistoryError('');
-
     fetch(apiUrl('/api/games/history?limit=10'), {
       headers: { Authorization: `Bearer ${session.access_token}` },
     })
@@ -38,76 +47,79 @@ export default function Home() {
         const body = await readJsonResponse(r, 'Failed to load history');
         if (alive) setHistory(body.games || []);
       })
-      .catch((err) => {
-        if (alive) setHistoryError(err.message || 'Failed to load history');
-      })
-      .finally(() => {
-        if (alive) setHistoryLoading(false);
-      });
-
+      .catch((err) => { if (alive) setHistoryError(err.message || 'Failed to load history'); })
+      .finally(() => { if (alive) setHistoryLoading(false); });
     return () => { alive = false; };
   }, [session?.access_token]);
 
+  // ── Fetch friends ─────────────────────────────────────────────────────────
+  const fetchFriends = useCallback(async () => {
+    if (!session?.access_token) return;
+    setFriendsLoading(true);
+    try {
+      const res = await fetch(apiUrl('/api/friends'), {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const body = await readJsonResponse(res, 'Failed to load friends');
+      setFriends(body.friends || []);
+      setPendingIncoming(body.pendingIncoming || []);
+    } catch {
+      // silently fail
+    } finally {
+      setFriendsLoading(false);
+    }
+  }, [session?.access_token]);
+
   useEffect(() => {
-    // Listen for matchmaking events
+    fetchFriends();
+    const interval = setInterval(fetchFriends, 30000);
+    return () => clearInterval(interval);
+  }, [fetchFriends]);
+
+  // ── Socket events ─────────────────────────────────────────────────────────
+  useEffect(() => {
     const offWaiting  = on('matchmaking:waiting', () => setStatus('waiting'));
     const offStart    = on('game:start', ({ gameId, color, white, black }) => {
       setStatus('starting');
       navigate(`/game/${gameId}`, { state: { color, white, black } });
     });
-    // Recovery: resume an existing game if one is found
     const offResume = on('game:resume', ({ gameId, color, white, black, moves }) => {
-      navigate(`/game/${gameId}`, {
-        state: { color, white, black, moves, resumed: true },
-      });
+      navigate(`/game/${gameId}`, { state: { color, white, black, moves, resumed: true } });
     });
 
-    // Ask server whether this user has a recoverable game
     emit('game:reconnectRequest');
 
-    // Invite events
-    const offInviteSent      = on('invite:sent',      ({ toUsername, toUserId }) => {
+    const offInviteSent      = on('invite:sent', ({ toUsername, toUserId }) => {
       setInviteStatus('sent');
       setInviteMsg(`Invite sent to ${toUsername}. Waiting for response…`);
       setInviteTargetId(toUserId);
     });
-    const offInviteError     = on('invite:error',     ({ message }) => {
+    const offInviteError     = on('invite:error', ({ message }) => {
       setInviteStatus('error');
       setInviteMsg(message);
     });
-    const offInviteIncoming  = on('invite:incoming',  ({ fromUsername, fromUserId }) => {
+    const offInviteIncoming  = on('invite:incoming', ({ fromUsername, fromUserId }) => {
       setIncomingInvite({ fromUsername, fromUserId });
     });
-    const offInviteDeclined  = on('invite:declined',  ({ byUsername }) => {
+    const offInviteDeclined  = on('invite:declined', ({ byUsername }) => {
       setInviteStatus('error');
       setInviteMsg(`${byUsername} declined your invite.`);
     });
     const offInviteCancelled = on('invite:cancelled', () => setIncomingInvite(null));
 
     return () => {
-      offWaiting?.();
-      offStart?.();
-      offResume?.();
-      offInviteSent?.();
-      offInviteError?.();
-      offInviteIncoming?.();
-      offInviteDeclined?.();
-      offInviteCancelled?.();
+      offWaiting?.(); offStart?.(); offResume?.();
+      offInviteSent?.(); offInviteError?.(); offInviteIncoming?.();
+      offInviteDeclined?.(); offInviteCancelled?.();
     };
   }, [on, emit, navigate]);
 
-  const handlePlay = () => {
-    setStatus('waiting');
-    emit('matchmaking:join');
-  };
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  const handlePlay        = () => { setStatus('waiting'); emit('matchmaking:join'); };
+  const handleCancel      = () => { emit('matchmaking:leave'); setStatus('idle'); };
 
-  const handleCancel = () => {
-    emit('matchmaking:leave');
-    setStatus('idle');
-  };
-
-  const handleSendInvite = () => {
-    const name = inviteInput.trim();
+  const handleSendInvite  = (targetUsername) => {
+    const name = (targetUsername ?? inviteInput).trim();
     if (!name) return;
     setInviteStatus('sending');
     setInviteMsg('');
@@ -116,9 +128,7 @@ export default function Home() {
 
   const handleCancelInvite = () => {
     if (inviteTargetId) emit('invite:cancel', { targetUserId: inviteTargetId });
-    setInviteStatus(null);
-    setInviteMsg('');
-    setInviteTargetId(null);
+    setInviteStatus(null); setInviteMsg(''); setInviteTargetId(null);
   };
 
   const handleAcceptInvite = () => {
@@ -131,27 +141,62 @@ export default function Home() {
     setIncomingInvite(null);
   };
 
+  const handleAddFriend = async () => {
+    const name = inviteInput.trim();
+    if (!name) return;
+    setAddFriendStatus('sending');
+    setAddFriendMsg('');
+    try {
+      const res = await fetch(apiUrl('/api/friends/request'), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUsername: name }),
+      });
+      const body = await readJsonResponse(res, 'Failed to send friend request');
+      setAddFriendStatus('success');
+      setAddFriendMsg(body.message);
+      fetchFriends();
+    } catch (err) {
+      setAddFriendStatus('error');
+      setAddFriendMsg(err.message);
+    }
+  };
+
+  const handleAcceptFriend = async (requesterId) => {
+    try {
+      const res = await fetch(apiUrl('/api/friends/accept'), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requesterId }),
+      });
+      await readJsonResponse(res, 'Failed to accept');
+      fetchFriends();
+    } catch {}
+  };
+
+  const handleRemoveFriend = async (userId) => {
+    try {
+      await fetch(apiUrl(`/api/friends/${userId}`), {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      fetchFriends();
+    } catch {}
+  };
+
   const handleReplayGame = async (gameId) => {
     if (!session?.access_token) return;
     setReplayLoadingId(gameId);
-
     try {
       const res = await fetch(apiUrl(`/api/games/history/${gameId}/replay`), {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
       const body = await readJsonResponse(res, 'Failed to load replay');
-
       navigate(`/game/${gameId}`, {
         state: {
-          color: body.game.color,
-          white: body.game.white,
-          black: body.game.black,
-          moves: body.moves,
-          historyReplay: true,
-          gameOver: {
-            result: body.game.result,
-            reason: body.game.reason,
-          },
+          color: body.game.color, white: body.game.white, black: body.game.black,
+          moves: body.moves, historyReplay: true,
+          gameOver: { result: body.game.result, reason: body.game.reason },
         },
       });
     } catch (err) {
@@ -172,11 +217,66 @@ export default function Home() {
       </header>
 
       <div className="home-body">
+        {/* ── Friends sidebar (left) ── */}
+        <aside className="friends-sidebar">
+          <h2 className="sidebar-title">Friends</h2>
+
+          {pendingIncoming.length > 0 && (
+            <>
+              <div className="sidebar-title" style={{ marginTop: '0.5rem', color: '#e0c97f' }}>
+                Requests ({pendingIncoming.length})
+              </div>
+              <ul className="sidebar-list">
+                {pendingIncoming.map((req) => (
+                  <li key={req.id} className="friend-entry" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.4rem' }}>
+                    <span className="sidebar-opponent">{req.username}</span>
+                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                      <button
+                        onClick={() => handleAcceptFriend(req.id)}
+                        style={{ padding: '0.2rem 0.55rem', background: '#4caf50', border: 'none', borderRadius: 4, color: '#111', fontWeight: 700, cursor: 'pointer', fontSize: '0.72rem' }}
+                      >Accept</button>
+                      <button
+                        onClick={() => handleRemoveFriend(req.id)}
+                        style={{ padding: '0.2rem 0.55rem', background: '#333', border: '1px solid #555', borderRadius: 4, color: '#ccc', fontWeight: 600, cursor: 'pointer', fontSize: '0.72rem' }}
+                      >Decline</button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {friendsLoading && !friends.length ? (
+            <p className="sidebar-empty">Loading…</p>
+          ) : !friends.length && !pendingIncoming.length ? (
+            <p className="sidebar-empty">No friends yet.</p>
+          ) : friends.length > 0 && (
+            <ul className="sidebar-list" style={{ marginTop: pendingIncoming.length ? '0.5rem' : 0 }}>
+              {friends.map((f) => (
+                <li key={f.id} className="friend-entry">
+                  <span className={`friend-dot ${f.online ? 'online' : 'offline'}`} />
+                  <div className="sidebar-entry-info">
+                    <span className="sidebar-opponent">{f.username}</span>
+                  </div>
+                  {f.online && (
+                    <button
+                      className="friend-invite-btn"
+                      onClick={() => handleSendInvite(f.username)}
+                      disabled={inviteStatus === 'sent' || status !== 'idle'}
+                    >
+                      Invite
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </aside>
+
+        {/* ── Main lobby ── */}
         <main className="lobby">
           {status === 'idle' && (
-            <button className="play-btn" onClick={handlePlay}>
-              Play Online
-            </button>
+            <button className="play-btn" onClick={handlePlay}>Play Online</button>
           )}
           {status === 'waiting' && (
             <div className="waiting">
@@ -193,19 +293,36 @@ export default function Home() {
                 type="text"
                 placeholder="Enter username…"
                 value={inviteInput}
-                onChange={e => { setInviteInput(e.target.value); setInviteStatus(null); setInviteMsg(''); }}
+                onChange={e => { setInviteInput(e.target.value); setInviteStatus(null); setInviteMsg(''); setAddFriendStatus(null); setAddFriendMsg(''); }}
                 onKeyDown={e => e.key === 'Enter' && handleSendInvite()}
                 disabled={inviteStatus === 'sending' || inviteStatus === 'sent'}
               />
-              {inviteStatus === 'sent'
-                ? <button className="invite-cancel-btn" onClick={handleCancelInvite}>Cancel</button>
-                : <button className="invite-send-btn" onClick={handleSendInvite} disabled={!inviteInput.trim() || inviteStatus === 'sending' || status !== 'idle'}>Invite</button>
-              }
+              {inviteStatus === 'sent' ? (
+                <button className="invite-cancel-btn" onClick={handleCancelInvite}>Cancel</button>
+              ) : (
+                <>
+                  <button
+                    className="invite-send-btn"
+                    onClick={() => handleSendInvite()}
+                    disabled={!inviteInput.trim() || inviteStatus === 'sending' || status !== 'idle'}
+                  >
+                    Invite
+                  </button>
+                  <button
+                    className="add-friend-btn"
+                    onClick={handleAddFriend}
+                    disabled={!inviteInput.trim() || addFriendStatus === 'sending'}
+                  >
+                    + Friend
+                  </button>
+                </>
+              )}
             </div>
             {inviteMsg && (
-              <p className={inviteStatus === 'error' ? 'error invite-msg' : 'invite-msg'}>
-                {inviteMsg}
-              </p>
+              <p className={inviteStatus === 'error' ? 'error invite-msg' : 'invite-msg'}>{inviteMsg}</p>
+            )}
+            {addFriendMsg && (
+              <p className={addFriendStatus === 'error' ? 'error invite-msg' : 'invite-msg'}>{addFriendMsg}</p>
             )}
           </div>
 
@@ -213,10 +330,7 @@ export default function Home() {
             <h3>Play vs Computer</h3>
             <div className="level-picker">
               <span>Level {level} — {LEVEL_NAMES[level - 1]}</span>
-              <input
-                type="range" min={1} max={8} value={level}
-                onChange={e => setLevel(Number(e.target.value))}
-              />
+              <input type="range" min={1} max={8} value={level} onChange={e => setLevel(Number(e.target.value))} />
             </div>
             <button
               className="play-btn computer-btn"
@@ -228,10 +342,11 @@ export default function Home() {
           </div>
         </main>
 
+        {/* ── History sidebar (right) ── */}
         <aside className="history-sidebar">
           <h2 className="sidebar-title">Recent Games</h2>
           {historyLoading && <p className="sidebar-empty">Loading…</p>}
-          {historyError  && <p className="sidebar-empty error">{historyError}</p>}
+          {historyError   && <p className="sidebar-empty error">{historyError}</p>}
           {!historyLoading && !history.length && !historyError && (
             <p className="sidebar-empty">No games yet.</p>
           )}
@@ -262,6 +377,7 @@ export default function Home() {
           </ul>
         </aside>
       </div>
+
       {incomingInvite && (
         <div className="invite-modal-overlay">
           <div className="invite-modal">

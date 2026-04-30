@@ -8,6 +8,7 @@ import cors from 'cors';
 
 import authRoutes from './routes/auth.js';
 import gamesRoutes from './routes/games.js';
+import friendsRoutes from './routes/friends.js';
 import { registerSocketHandlers } from './socket/index.js';
 import { verifyToken } from './middleware/auth.js';
 import { NodeRegistry } from './lib/nodeRegistry.js';
@@ -65,6 +66,7 @@ app.use(express.json());
 // ─── REST Routes ─────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/games', gamesRoutes);
+app.use('/api/friends', friendsRoutes);
 
 app.get('/api/health', (_req, res) =>
   res.json({ status: 'ok', nodeId: NODE_ID, nodeAddress: NODE_ADDRESS })
