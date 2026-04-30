@@ -16,12 +16,13 @@ function PrivateRoute({ children }) {
 
 export default function App() {
   const session = useAuthStore((s) => s.session);
+  const signOut = useAuthStore((s) => s.signOut);
   const { connect, disconnect } = useSocketStore();
 
   // Keep one socket alive for the entire authenticated session
   useEffect(() => {
     if (session?.access_token) {
-      connect(session.access_token);
+      connect(session.access_token, signOut);
     } else {
       disconnect();
     }

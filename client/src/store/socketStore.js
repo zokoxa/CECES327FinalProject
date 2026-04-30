@@ -6,7 +6,7 @@ const SOCKET_URL = import.meta.env.VITE_SERVER_URL || window.location.origin;
 export const useSocketStore = create((set, get) => ({
   socket: null,
 
-  connect: (token) => {
+  connect: (token, onInvalidated) => {
     const existing = get().socket;
     if (existing?.connected) return;
     if (existing) existing.disconnect();
@@ -18,6 +18,12 @@ export const useSocketStore = create((set, get) => ({
 
     socket.on('connect_error', (err) => {
       console.error('Socket connection error:', err.message);
+    });
+
+    socket.on('session:invalidated', () => {
+      socket.disconnect();
+      set({ socket: null });
+      onInvalidated?.();
     });
 
     set({ socket });

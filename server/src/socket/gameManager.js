@@ -602,6 +602,10 @@ export class GameManager {
   // ─── Connection tracking ──────────────────────────────────────────────────────
 
   async handleConnect(socket) {
+    const oldSocketId = await redis.get(userSocketKey(socket.user.id));
+    if (oldSocketId && oldSocketId !== socket.id) {
+      this.io.to(oldSocketId).emit('session:invalidated');
+    }
     await redis.set(userSocketKey(socket.user.id), socket.id, 'EX', 86400);
   }
 
