@@ -11,6 +11,7 @@ export default function ReplayPanel({
   moves,
   replayIndex,
   isReplayMode,
+  replayEnabled,
   onJumpStart,
   onStepBack,
   onStepForward,
@@ -19,19 +20,21 @@ export default function ReplayPanel({
 }) {
   return (
     <>
-      <div className="replay-controls">
-        <div className="replay-header">
-          <strong>Replay</strong>
-          <span>Step {replayIndex} of {moves.length}</span>
-          {isReplayMode && <span className="replay-badge">Replay mode</span>}
+      {replayEnabled && (
+        <div className="replay-controls">
+          <div className="replay-header">
+            <strong>Replay</strong>
+            <span>Step {replayIndex} of {moves.length}</span>
+            {isReplayMode && <span className="replay-badge">Replay mode</span>}
+          </div>
+          <div className="replay-buttons">
+            <button onClick={onJumpStart} disabled={replayIndex === 0}>{'<<'}</button>
+            <button onClick={onStepBack} disabled={replayIndex === 0}>{'<'}</button>
+            <button onClick={onStepForward} disabled={replayIndex === moves.length}>{'>'}</button>
+            <button onClick={onJumpEnd} disabled={replayIndex === moves.length}>{'>>'}</button>
+          </div>
         </div>
-        <div className="replay-buttons">
-          <button onClick={onJumpStart} disabled={replayIndex === 0}>{'<<'}</button>
-          <button onClick={onStepBack} disabled={replayIndex === 0}>{'<'}</button>
-          <button onClick={onStepForward} disabled={replayIndex === moves.length}>{'>'}</button>
-          <button onClick={onJumpEnd} disabled={replayIndex === moves.length}>{'>>'}</button>
-        </div>
-      </div>
+      )}
 
       <aside className="move-list">
         <h3>Moves</h3>
@@ -40,8 +43,9 @@ export default function ReplayPanel({
             <li
               key={i}
               className={replayIndex === i + 1 ? 'active' : ''}
-              onClick={() => onJumpToMove(i + 1)}
-              title={`Jump to move ${i + 1}`}
+              onClick={replayEnabled ? () => onJumpToMove(i + 1) : undefined}
+              title={replayEnabled ? `Jump to move ${i + 1}` : undefined}
+              style={replayEnabled ? { cursor: 'pointer' } : { cursor: 'default' }}
             >
               {toUci(m)}
             </li>

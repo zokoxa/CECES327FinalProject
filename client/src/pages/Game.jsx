@@ -336,18 +336,17 @@ export default function Game() {
         </div>
       )}
 
-      {replayEnabled && (
-        <ReplayPanel
-          moves={moves}
-          replayIndex={replayIndex}
-          isReplayMode={isReplayMode}
-          onJumpStart={jumpStart}
-          onStepBack={stepBack}
-          onStepForward={stepForward}
-          onJumpEnd={jumpEnd}
-          onJumpToMove={jumpToMove}
-        />
-      )}
+      <ReplayPanel
+        moves={moves}
+        replayIndex={replayIndex}
+        isReplayMode={isReplayMode}
+        replayEnabled={replayEnabled}
+        onJumpStart={jumpStart}
+        onStepBack={stepBack}
+        onStepForward={stepForward}
+        onJumpEnd={jumpEnd}
+        onJumpToMove={jumpToMove}
+      />
 
       {gameOver && showGameOverModal && !historyReplay && (() => {
         const isCheckmate = gameOver.reason === 'checkmate';
