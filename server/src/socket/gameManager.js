@@ -709,7 +709,10 @@ export class GameManager {
   // ─── Disconnect ───────────────────────────────────────────────────────────────
 
   async handleDisconnect(socket) {
-    await redis.del(userSocketKey(socket.user.id));
+    const currentSocketId = await redis.get(userSocketKey(socket.user.id));
+    if (currentSocketId === socket.id) {
+      await redis.del(userSocketKey(socket.user.id));
+    }
     await this.leaveQueue(socket);
 
     const gameId = await redis.get(socketGameKey(socket.id));
