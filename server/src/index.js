@@ -18,7 +18,11 @@ import { NodeRegistry } from './lib/nodeRegistry.js';
 // (the HTTP URL other nodes will use to route moves to this node).
 const PORT         = process.env.PORT         || 3001;
 const NODE_ID      = process.env.NODE_ID      || 'node-1';
-const NODE_ADDRESS = process.env.NODE_ADDRESS || `http://localhost:${PORT}`;
+const HOST         = process.env.HOST         || '::';
+const NODE_ADDRESS = process.env.NODE_ADDRESS ||
+  (process.env.RAILWAY_PRIVATE_DOMAIN
+    ? `http://${process.env.RAILWAY_PRIVATE_DOMAIN}:${PORT}`
+    : `http://localhost:${PORT}`);
 
 const app        = express();
 const httpServer = createServer(app);
@@ -132,6 +136,10 @@ io.use(async (socket, next) => {
   if (!user) return next(new Error('Invalid token'));
 
   socket.user = user;
+  socket.data.user = {
+    id: user.id,
+    username: user.username,
+  };
   next();
 });
 
@@ -142,6 +150,6 @@ app.locals.gameManager = gameManager;
 app.locals.io = io;
 
 // ─── Start ────────────────────────────────────────────────────────────────────
-httpServer.listen(PORT, () => {
-  console.log(`🚀 Server [${NODE_ID}] running on port ${PORT}`);
+httpServer.listen(PORT, HOST, () => {
+  console.log(`Server [${NODE_ID}] running on ${HOST}:${PORT}`);
 });

@@ -273,7 +273,7 @@ export default function Game() {
           {turnIndicator(!isMyTurn)}
           {!isMyTurn && !gameOver && <span style={{ marginLeft: 6, fontSize: 12, color: '#4caf50' }}>thinking…</span>}
         </span>
-        {historyReplay && (
+        {replayEnabled && (
           <button onClick={() => navigate('/')} style={{ marginLeft: 'auto', padding: '0.35rem 1rem', border: 'none', borderRadius: 6, background: '#444', color: '#f0f0f0', cursor: 'pointer', fontSize: 13 }}>
             ← Home
           </button>

@@ -104,6 +104,15 @@ export class GameManager {
     }, 5000);
   }
 
+  async getSocketUser(socketId) {
+    const localSocket = this.io.sockets.sockets.get(socketId);
+    if (localSocket?.user) return localSocket.user;
+
+    const sockets = await this.io.in(socketId).fetchSockets();
+    const socket = sockets.find((s) => s.id === socketId);
+    return socket?.data?.user ?? null;
+  }
+
   // ─── Matchmaking ─────────────────────────────────────────────────────────────
   //
   // Matchmaking is atomic: a single Lua script runs on Redis as one uninterruptible
@@ -140,8 +149,8 @@ export class GameManager {
       return;
     }
 
-    const opponentSocket = this.io.sockets.sockets.get(opponentId);
-    if (!opponentSocket) {
+    const opponentUser = await this.getSocketUser(opponentId);
+    if (!opponentUser) {
       await redis.rpush(QUEUE_KEY, socket.id);
       socket.emit('matchmaking:waiting');
       return;
@@ -149,7 +158,7 @@ export class GameManager {
 
     await this._createGame(
       { socketId: socket.id,         userId: socket.user.id,         username: socket.user.username },
-      { socketId: opponentSocket.id, userId: opponentSocket.user.id, username: opponentSocket.user.username }
+      { socketId: opponentId,        userId: opponentUser.id,        username: opponentUser.username }
     );
   }
 
