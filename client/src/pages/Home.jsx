@@ -276,6 +276,11 @@ export default function Home() {
                       Invite
                     </button>
                   )}
+                  <button
+                    className="friend-remove-btn"
+                    onClick={() => handleRemoveFriend(f.id)}
+                    title="Remove friend"
+                  >×</button>
                 </li>
               ))}
             </ul>

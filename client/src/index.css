@@ -339,6 +339,21 @@ body {
 .friend-invite-btn:hover:not(:disabled) { background: #3a5f8f; }
 .friend-invite-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+.friend-remove-btn {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #555;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.friend-remove-btn:hover { background: #4a1515; color: #ef5350; }
+
 .add-friend-btn {
   padding: 0.55rem 0.8rem;
   border: 1.5px solid #5d8a5e;
