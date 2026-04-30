@@ -291,7 +291,11 @@ export default function Game() {
         </span>
       </div>
 
-      {!historyReplay && (
+      {historyReplay ? (
+        <div className="game-controls">
+          <button onClick={() => navigate('/')}>Back to Home</button>
+        </div>
+      ) : (
         <div className="game-controls">
           <button onClick={handleResign} disabled={!!gameOver || paused}>Resign</button>
           <button onClick={handleDrawOffer} disabled={!!gameOver || paused || !!incomingDrawOffer}>Offer Draw</button>
