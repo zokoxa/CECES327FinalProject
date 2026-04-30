@@ -113,12 +113,13 @@ body {
 .invite-section {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 0.6rem;
   padding: 1.25rem 1.5rem;
   background: #232323;
   border: 1px solid #3a3a3a;
   border-radius: 10px;
-  width: min(360px, 92vw);
+  width: min(480px, 92vw);
 }
 
 .invite-section h3 {
@@ -130,6 +131,7 @@ body {
 .invite-input-row {
   display: flex;
   gap: 0.5rem;
+  width: 100%;
 }
 
 .invite-input-row input {
