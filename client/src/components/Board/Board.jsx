@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
+import { apiUrl, readJsonResponse } from '../../lib/api.js';
 
 // ── Enums (must match C# ChessMoveType / ChessPieceType) ─────────────────────
 const MT = { Normal: 0, CastleQueenSide: 1, CastleKingSide: 2, EnPassant: 3, PawnPromote: 4 };
 const PT = { Pawn: 1, Rook: 2, Knight: 3, Bishop: 4, Queen: 5, King: 6 };
-
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || '';
 
 const SQUARE = 64;
 const BORDER = 3;
@@ -80,12 +79,12 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
     if (!selected || !isMyTurn) { setLegalMoves([]); return; }
     let alive = true;
     const { row, col } = selected;
-    fetch(`${SERVER_URL}/api/game/moves`, {
+    fetch(apiUrl('/api/game/moves'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ history: moves }),
     })
-      .then(r => r.json())
+      .then(r => readJsonResponse(r, 'Failed to load legal moves'))
       .then(({ moves: legal }) => {
         if (alive) setLegalMoves(legal.filter(m => m.fromRow === row && m.fromCol === col));
       })

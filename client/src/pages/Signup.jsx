@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { apiUrl, readJsonResponse } from '../lib/api.js';
 
 export default function Signup() {
   const [form, setForm] = useState({ email: '', password: '', username: '' });
@@ -14,13 +15,12 @@ export default function Signup() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch(apiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      await readJsonResponse(res, 'Failed to create account');
       navigate('/login');
     } catch (err) {
       setError(err.message);

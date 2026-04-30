@@ -62,6 +62,7 @@ services:
       args:
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
         VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+        VITE_SERVER_URL: ${VITE_SERVER_URL:-}
     ports:
       - "80:80"
     depends_on:

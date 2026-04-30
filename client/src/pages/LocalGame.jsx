@@ -5,9 +5,9 @@ import { useReplay } from '../hooks/useReplay.js';
 import { useStockfish, fromUci } from '../hooks/useStockfish.js';
 import Board from '../components/Board/Board.jsx';
 import ReplayPanel from '../components/Replay/ReplayPanel.jsx';
+import { apiUrl, readJsonResponse } from '../lib/api.js';
 
 const LEVEL_NAMES = ['Beginner', 'Novice', 'Amateur', 'Intermediate', 'Club', 'Advanced', 'Expert', 'Master'];
-const SERVER_URL  = import.meta.env.VITE_SERVER_URL || '';
 
 const REASON_LABEL = {
   checkmate:   'Checkmate',
@@ -17,21 +17,21 @@ const REASON_LABEL = {
 };
 
 async function apiValidate(history, move) {
-  const res = await fetch(`${SERVER_URL}/api/game/validate`, {
+  const res = await fetch(apiUrl('/api/game/validate'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ history, move }),
   });
-  return res.json();
+  return readJsonResponse(res, 'Failed to validate move');
 }
 
 async function apiLegalMoves(history) {
-  const res = await fetch(`${SERVER_URL}/api/game/moves`, {
+  const res = await fetch(apiUrl('/api/game/moves'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ history }),
   });
-  const data = await res.json();
+  const data = await readJsonResponse(res, 'Failed to load legal moves');
   return data.moves ?? [];
 }
 

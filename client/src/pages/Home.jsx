@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore.js';
 import { useSocket } from '../hooks/useSocket.js';
+import { apiUrl, readJsonResponse } from '../lib/api.js';
 
 const LEVEL_NAMES = ['Beginner', 'Novice', 'Amateur', 'Intermediate', 'Club', 'Advanced', 'Expert', 'Master'];
 
@@ -30,12 +31,11 @@ export default function Home() {
     setHistoryLoading(true);
     setHistoryError('');
 
-    fetch('/api/games/history?limit=10', {
+    fetch(apiUrl('/api/games/history?limit=10'), {
       headers: { Authorization: `Bearer ${session.access_token}` },
     })
       .then(async (r) => {
-        const body = await r.json();
-        if (!r.ok) throw new Error(body?.error || 'Failed to load history');
+        const body = await readJsonResponse(r, 'Failed to load history');
         if (alive) setHistory(body.games || []);
       })
       .catch((err) => {
@@ -136,11 +136,10 @@ export default function Home() {
     setReplayLoadingId(gameId);
 
     try {
-      const res = await fetch(`/api/games/history/${gameId}/replay`, {
+      const res = await fetch(apiUrl(`/api/games/history/${gameId}/replay`), {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error || 'Failed to load replay');
+      const body = await readJsonResponse(res, 'Failed to load replay');
 
       navigate(`/game/${gameId}`, {
         state: {
