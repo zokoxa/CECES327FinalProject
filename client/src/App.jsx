@@ -22,7 +22,10 @@ export default function App() {
   // Keep one socket alive for the entire authenticated session
   useEffect(() => {
     if (session?.access_token) {
-      connect(session.access_token, signOut);
+      connect(session.access_token, () => {
+        alert('You have been signed out because your account was logged in from another location.');
+        signOut();
+      });
     } else {
       disconnect();
     }
