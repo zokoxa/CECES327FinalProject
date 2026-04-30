@@ -2,7 +2,9 @@
 
 ## Overview
 
-This project runs as a Dockerized full-stack application.
+> **Live Demo:** https://client-production-5738.up.railway.app/login — no installation required.
+
+This project also runs as a Dockerized full-stack application.
 
 ## Prerequisites
 

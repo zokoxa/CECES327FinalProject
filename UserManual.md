@@ -20,6 +20,10 @@
 
 ---
 
+> **Live Demo:** The application is deployed and available at **https://client-production-5738.up.railway.app/login** — no installation required. The sections below describe how to run it locally if preferred.
+
+---
+
 ## 1. Prerequisites
 
 | Requirement | Details |
