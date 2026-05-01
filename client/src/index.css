@@ -133,12 +133,13 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  font-size: 0.72rem;
+  gap: 0;
+  font-size: 0.62rem;
+  line-height: 1.1;
   font-weight: 700;
   text-transform: uppercase;
   color: #555;
-  margin-top: 0.75rem;
+  margin-top: 0.5rem;
   -webkit-user-select: none;
   user-select: none;
 }
