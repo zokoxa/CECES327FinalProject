@@ -2,8 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import Redis from 'ioredis';
 import { createAdapter } from '@socket.io/redis-adapter';
+import { createRedisClient } from './lib/redis.js';
 import cors from 'cors';
 
 import authRoutes from './routes/auth.js';
@@ -37,8 +37,8 @@ const io = new Server(httpServer, {
   },
 });
 
-const pubClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
-const subClient = pubClient.duplicate();
+const pubClient = createRedisClient();
+const subClient = createRedisClient();
 
 pubClient.on('connect', () => {
   io.adapter(createAdapter(pubClient, subClient));

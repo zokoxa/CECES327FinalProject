@@ -1,7 +1,54 @@
 services:
+
+  # ── Redis master ──────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: redis-server --bind 0.0.0.0 --appendonly yes
+
+  # ── Redis replica ─────────────────────────────────────────────────────────────
+  redis-replica:
+    build: ./redis-replica
+    restart: unless-stopped
+    environment:
+      REDIS_MASTER_HOST: redis
+      REDIS_MASTER_PORT: 6379
+    depends_on:
+      - redis
+
+  # ── Sentinels (3 required for quorum = 2) ────────────────────────────────────
+  sentinel-1:
+    build: ./redis-sentinel
+    restart: unless-stopped
+    environment:
+      REDIS_MASTER_HOST: redis
+      REDIS_MASTER_PORT: 6379
+      SENTINEL_QUORUM: 2
+    depends_on:
+      - redis
+      - redis-replica
+
+  sentinel-2:
+    build: ./redis-sentinel
+    restart: unless-stopped
+    environment:
+      REDIS_MASTER_HOST: redis
+      REDIS_MASTER_PORT: 6379
+      SENTINEL_QUORUM: 2
+    depends_on:
+      - redis
+      - redis-replica
+
+  sentinel-3:
+    build: ./redis-sentinel
+    restart: unless-stopped
+    environment:
+      REDIS_MASTER_HOST: redis
+      REDIS_MASTER_PORT: 6379
+      SENTINEL_QUORUM: 2
+    depends_on:
+      - redis
+      - redis-replica
 
   chess-engine:
     build: ./chess-engine
@@ -17,13 +64,15 @@ services:
       PORT: 3001
       NODE_ID: node-1
       NODE_ADDRESS: http://server:3001
-      REDIS_URL: redis://redis:6379
+      REDIS_SENTINEL_HOSTS: sentinel-1:26379,sentinel-2:26379,sentinel-3:26379
       CHESS_ENGINE_URL: http://chess-engine:5001
       CLIENT_URL: http://localhost
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
     depends_on:
-      - redis
+      - sentinel-1
+      - sentinel-2
+      - sentinel-3
       - chess-engine
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/health').then(r => process.exit(r.ok ? 0 : 1))"]
@@ -32,9 +81,6 @@ services:
       retries: 10
 
   # ── Game node 2 ──────────────────────────────────────────────────────────────
-  # A second independent game node. Handles its own games as the authoritative
-  # owner; routes moves to the correct owner when receiving moves for games
-  # it does not own.
   server2:
     build: ./server
     restart: unless-stopped
@@ -42,13 +88,15 @@ services:
       PORT: 3002
       NODE_ID: node-2
       NODE_ADDRESS: http://server2:3002
-      REDIS_URL: redis://redis:6379
+      REDIS_SENTINEL_HOSTS: sentinel-1:26379,sentinel-2:26379,sentinel-3:26379
       CHESS_ENGINE_URL: http://chess-engine:5001
       CLIENT_URL: http://localhost
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
     depends_on:
-      - redis
+      - sentinel-1
+      - sentinel-2
+      - sentinel-3
       - chess-engine
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3002/api/health').then(r => process.exit(r.ok ? 0 : 1))"]
