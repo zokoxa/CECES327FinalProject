@@ -3,13 +3,15 @@ import Redis from 'ioredis';
 function sentinelConfig() {
   const hosts = process.env.REDIS_SENTINEL_HOSTS;
   if (!hosts) return null;
-  return {
+  const config = {
     sentinels: hosts.split(',').map(h => {
       const [host, port] = h.trim().split(':');
       return { host, port: parseInt(port) || 26379 };
     }),
     name: 'mymaster',
   };
+  if (process.env.REDIS_PASSWORD) config.password = process.env.REDIS_PASSWORD;
+  return config;
 }
 
 export function createRedisClient() {

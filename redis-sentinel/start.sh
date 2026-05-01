@@ -13,5 +13,9 @@ sentinel resolve-hostnames yes
 sentinel announce-hostnames yes
 EOF
 
+if [ -n "${REDIS_PASSWORD}" ]; then
+  echo "sentinel auth-pass mymaster ${REDIS_PASSWORD}" >> /tmp/sentinel.conf
+fi
+
 echo "Starting sentinel → master at ${MASTER_HOST}:${MASTER_PORT} (quorum ${QUORUM})"
 exec redis-sentinel /tmp/sentinel.conf
