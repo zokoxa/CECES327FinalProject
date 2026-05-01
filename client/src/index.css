@@ -87,6 +87,45 @@ body {
   display: grid;
   grid-template-columns: 240px 1fr 280px;
   min-height: calc(100vh - 64px);
+  transition: grid-template-columns 0.25s ease;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  min-height: 28px;
+}
+
+.sidebar-toggle {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: #2a2a2a;
+  color: #888;
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+}
+.sidebar-toggle:hover { background: #383838; color: #ccc; }
+
+.friends-sidebar.sidebar-collapsed,
+.history-sidebar.sidebar-collapsed {
+  padding: 1rem 0.4rem;
+  overflow: hidden;
+}
+
+.friends-sidebar.sidebar-collapsed .sidebar-header,
+.history-sidebar.sidebar-collapsed .sidebar-header {
+  justify-content: center;
+  margin-bottom: 0;
 }
 
 .lobby {

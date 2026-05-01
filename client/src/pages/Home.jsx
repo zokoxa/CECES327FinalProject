@@ -32,6 +32,9 @@ export default function Home() {
   const [addFriendStatus, setAddFriendStatus] = useState(null);
   const [addFriendMsg, setAddFriendMsg]     = useState('');
 
+  const [leftOpen, setLeftOpen]   = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
+
   const navigate = useNavigate();
 
   // ── Fetch game history ────────────────────────────────────────────────────
@@ -225,12 +228,20 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="home-body">
+      <div
+        className="home-body"
+        style={{ gridTemplateColumns: `${leftOpen ? '240px' : '36px'} 1fr ${rightOpen ? '280px' : '36px'}` }}
+      >
         {/* ── Friends sidebar (left) ── */}
-        <aside className="friends-sidebar">
-          <h2 className="sidebar-title">Friends</h2>
+        <aside className={`friends-sidebar${leftOpen ? '' : ' sidebar-collapsed'}`}>
+          <div className="sidebar-header">
+            {leftOpen && <h2 className="sidebar-title">Friends</h2>}
+            <button className="sidebar-toggle" onClick={() => setLeftOpen(o => !o)} title={leftOpen ? 'Collapse' : 'Expand'}>
+              {leftOpen ? '◀' : '▶'}
+            </button>
+          </div>
 
-          {pendingIncoming.length > 0 && (
+          {leftOpen && pendingIncoming.length > 0 && (
             <>
               <div className="sidebar-title" style={{ marginTop: '0.5rem', color: '#e0c97f' }}>
                 Requests ({pendingIncoming.length})
@@ -255,11 +266,11 @@ export default function Home() {
             </>
           )}
 
-          {friendsLoading && !friends.length ? (
+          {leftOpen && (friendsLoading && !friends.length ? (
             <p className="sidebar-empty">Loading…</p>
           ) : !friends.length && !pendingIncoming.length ? (
             <p className="sidebar-empty">No friends yet.</p>
-          ) : friends.length > 0 && (
+          ) : friends.length > 0 ? (
             <ul className="sidebar-list" style={{ marginTop: pendingIncoming.length ? '0.5rem' : 0 }}>
               {friends.map((f) => (
                 <li key={f.id} className="friend-entry">
@@ -284,7 +295,7 @@ export default function Home() {
                 </li>
               ))}
             </ul>
-          )}
+          ) : null)}
         </aside>
 
         {/* ── Main lobby ── */}
@@ -357,38 +368,47 @@ export default function Home() {
         </main>
 
         {/* ── History sidebar (right) ── */}
-        <aside className="history-sidebar">
-          <h2 className="sidebar-title">Recent Games</h2>
-          {historyLoading && <p className="sidebar-empty">Loading…</p>}
-          {historyError   && <p className="sidebar-empty error">{historyError}</p>}
-          {!historyLoading && !history.length && !historyError && (
-            <p className="sidebar-empty">No games yet.</p>
+        <aside className={`history-sidebar${rightOpen ? '' : ' sidebar-collapsed'}`}>
+          <div className="sidebar-header">
+            <button className="sidebar-toggle" onClick={() => setRightOpen(o => !o)} title={rightOpen ? 'Collapse' : 'Expand'}>
+              {rightOpen ? '▶' : '◀'}
+            </button>
+            {rightOpen && <h2 className="sidebar-title">Recent Games</h2>}
+          </div>
+          {rightOpen && (
+            <>
+              {historyLoading && <p className="sidebar-empty">Loading…</p>}
+              {historyError   && <p className="sidebar-empty error">{historyError}</p>}
+              {!historyLoading && !history.length && !historyError && (
+                <p className="sidebar-empty">No games yet.</p>
+              )}
+              <ul className="sidebar-list">
+                {history.map((g) => {
+                  const opponent = g.color === 'white' ? g.black?.username : g.white?.username;
+                  const isDraw   = g.result === 'draw';
+                  const iWon     = !isDraw && g.result === g.color;
+                  const badge    = isDraw ? 'D' : iWon ? 'W' : 'L';
+                  const badgeCls = isDraw ? 'badge-draw' : iWon ? 'badge-win' : 'badge-loss';
+                  return (
+                    <li key={g.id} className="sidebar-entry">
+                      <span className={`result-badge ${badgeCls}`}>{badge}</span>
+                      <div className="sidebar-entry-info">
+                        <span className="sidebar-opponent">vs {opponent || 'Unknown'}</span>
+                        <span className="sidebar-reason">{g.reason || '—'}</span>
+                      </div>
+                      <button
+                        className="sidebar-replay-btn"
+                        onClick={() => handleReplayGame(g.id)}
+                        disabled={replayLoadingId === g.id}
+                      >
+                        {replayLoadingId === g.id ? '…' : '▶'}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
           )}
-          <ul className="sidebar-list">
-            {history.map((g) => {
-              const opponent = g.color === 'white' ? g.black?.username : g.white?.username;
-              const isDraw   = g.result === 'draw';
-              const iWon     = !isDraw && g.result === g.color;
-              const badge    = isDraw ? 'D' : iWon ? 'W' : 'L';
-              const badgeCls = isDraw ? 'badge-draw' : iWon ? 'badge-win' : 'badge-loss';
-              return (
-                <li key={g.id} className="sidebar-entry">
-                  <span className={`result-badge ${badgeCls}`}>{badge}</span>
-                  <div className="sidebar-entry-info">
-                    <span className="sidebar-opponent">vs {opponent || 'Unknown'}</span>
-                    <span className="sidebar-reason">{g.reason || '—'}</span>
-                  </div>
-                  <button
-                    className="sidebar-replay-btn"
-                    onClick={() => handleReplayGame(g.id)}
-                    disabled={replayLoadingId === g.id}
-                  >
-                    {replayLoadingId === g.id ? '…' : '▶'}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
         </aside>
       </div>
 
