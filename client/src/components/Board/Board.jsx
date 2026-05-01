@@ -224,7 +224,7 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
                 {piece && (
                   <img
                     src={pieceImg(piece.p, piece.t)}
-                    style={{ width: 56, height: 56, zIndex: 2, pointerEvents: 'none' }}
+                    style={{ width: 56, height: 'auto', zIndex: 2, pointerEvents: 'none' }}
                     draggable={false}
                     alt=""
                   />
@@ -260,7 +260,7 @@ export default function Board({ color, moves, onMove, onGameOver: _onGameOver, d
                   padding: 4,
                 }}
               >
-                <img src={pieceImg(myPlayer, pt)} style={{ width: 52, height: 52 }} draggable={false} alt="" />
+                <img src={pieceImg(myPlayer, pt)} style={{ width: 52, height: 'auto' }} draggable={false} alt="" />
               </button>
             ))}
           </div>

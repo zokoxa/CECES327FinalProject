@@ -120,12 +120,28 @@ body {
 .history-sidebar.sidebar-collapsed {
   padding: 1rem 0.4rem;
   overflow: hidden;
+  align-items: center;
 }
 
 .friends-sidebar.sidebar-collapsed .sidebar-header,
 .history-sidebar.sidebar-collapsed .sidebar-header {
   justify-content: center;
   margin-bottom: 0;
+}
+
+.sidebar-collapsed-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #555;
+  margin-top: 0.75rem;
+  -webkit-user-select: none;
+  user-select: none;
+  white-space: nowrap;
 }
 
 .lobby {

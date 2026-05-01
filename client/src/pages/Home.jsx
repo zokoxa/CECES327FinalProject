@@ -240,6 +240,7 @@ export default function Home() {
               {leftOpen ? '◀' : '▶'}
             </button>
           </div>
+          {!leftOpen && <span className="sidebar-collapsed-label">Friends</span>}
 
           {leftOpen && pendingIncoming.length > 0 && (
             <>
@@ -375,6 +376,7 @@ export default function Home() {
             </button>
             {rightOpen && <h2 className="sidebar-title">Recent Games</h2>}
           </div>
+          {!rightOpen && <span className="sidebar-collapsed-label">Recent Games</span>}
           {rightOpen && (
             <>
               {historyLoading && <p className="sidebar-empty">Loading…</p>}
