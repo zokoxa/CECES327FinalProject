@@ -240,7 +240,11 @@ export default function Home() {
               {leftOpen ? '◀' : '▶'}
             </button>
           </div>
-          {!leftOpen && <span className="sidebar-collapsed-label">Friends</span>}
+          {!leftOpen && (
+            <div className="sidebar-collapsed-label">
+              {'Friends'.toUpperCase().split('').map((ch, i) => <span key={i}>{ch}</span>)}
+            </div>
+          )}
 
           {leftOpen && pendingIncoming.length > 0 && (
             <>
@@ -376,7 +380,11 @@ export default function Home() {
             </button>
             {rightOpen && <h2 className="sidebar-title">Recent Games</h2>}
           </div>
-          {!rightOpen && <span className="sidebar-collapsed-label">Recent Games</span>}
+          {!rightOpen && (
+            <div className="sidebar-collapsed-label">
+              {'Recent Games'.toUpperCase().split('').map((ch, i) => <span key={i}>{ch === ' ' ? ' ' : ch}</span>)}
+            </div>
+          )}
           {rightOpen && (
             <>
               {historyLoading && <p className="sidebar-empty">Loading…</p>}
