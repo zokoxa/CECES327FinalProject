@@ -53,8 +53,14 @@ services:
   chess-engine:
     build: ./chess-engine
     restart: unless-stopped
-    depends_on:
-      - redis
+
+  chess-engine-2:
+    build: ./chess-engine
+    restart: unless-stopped
+
+  chess-engine-3:
+    build: ./chess-engine
+    restart: unless-stopped
 
   # ── Game node 1 ──────────────────────────────────────────────────────────────
   server:
@@ -74,6 +80,7 @@ services:
       - sentinel-2
       - sentinel-3
       - chess-engine
+
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/health').then(r => process.exit(r.ok ? 0 : 1))"]
       interval: 5s
@@ -89,7 +96,7 @@ services:
       NODE_ID: node-2
       NODE_ADDRESS: http://server2:3002
       REDIS_SENTINEL_HOSTS: sentinel-1:26379,sentinel-2:26379,sentinel-3:26379
-      CHESS_ENGINE_URL: http://chess-engine:5001
+      CHESS_ENGINE_URL: http://chess-engine-2:5001
       CLIENT_URL: http://localhost
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
@@ -97,9 +104,33 @@ services:
       - sentinel-1
       - sentinel-2
       - sentinel-3
-      - chess-engine
+      - chess-engine-2
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3002/api/health').then(r => process.exit(r.ok ? 0 : 1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Game node 3 ──────────────────────────────────────────────────────────────
+  server3:
+    build: ./server
+    restart: unless-stopped
+    environment:
+      PORT: 3003
+      NODE_ID: node-3
+      NODE_ADDRESS: http://server3:3003
+      REDIS_SENTINEL_HOSTS: sentinel-1:26379,sentinel-2:26379,sentinel-3:26379
+      CHESS_ENGINE_URL: http://chess-engine-3:5001
+      CLIENT_URL: http://localhost
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+    depends_on:
+      - sentinel-1
+      - sentinel-2
+      - sentinel-3
+      - chess-engine-3
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3003/api/health').then(r => process.exit(r.ok ? 0 : 1))"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -117,4 +148,6 @@ services:
       server:
         condition: service_healthy
       server2:
+        condition: service_healthy
+      server3:
         condition: service_healthy
